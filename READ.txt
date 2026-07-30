@@ -1,0 +1,4 @@
+Start with:
+chmod +x start.command node/node
+
+then start.command should be executable
