@@ -51,5 +51,6 @@ temp/
 *.db
 
 #other
+docs/
 node/
 data/
