@@ -1,16 +1,23 @@
 const express = require('express');
-const { GALAXIES_FILE, MEMORIES_FILE } = require('../config');
-const { readJSON, writeJSON, withWriteLock } = require('../lib/storage');
+const { GALAXIES_DIR, MEMORIES_DIR, INDEX_FILE } = require('../config');
+const {
+  readJSON,
+  writeJSON,
+  withWriteLock,
+  readRecord,
+  writeRecord,
+  deleteRecord,
+  readAllRecords,
+} = require('../lib/storage');
 const { validateGalaxy } = require('../lib/validate');
 
 const router = express.Router();
 
 router.get('/', (req, res) => {
   try {
-    const galaxies = readJSON(GALAXIES_FILE)
+    const galaxies = readAllRecords(GALAXIES_DIR)
       .slice()
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-      .map(({ _id, ...rest }) => rest);
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     res.json({ galaxies });
   } catch (e) {
     console.error(e);
@@ -26,16 +33,12 @@ router.post('/', async (req, res) => {
     }
 
     await withWriteLock(() => {
-      const galaxies = readJSON(GALAXIES_FILE);
-      const existingIdx = galaxies.findIndex((g) => g.id === doc.id);
-      if (existingIdx === -1) {
-        galaxies.push(doc);
-      } else {
+      const existing = readRecord(GALAXIES_DIR, doc.id);
+      if (existing) {
         // keep original createdAt on update
-        doc.createdAt = galaxies[existingIdx].createdAt;
-        galaxies[existingIdx] = doc;
+        doc.createdAt = existing.createdAt;
       }
-      writeJSON(GALAXIES_FILE, galaxies);
+      writeRecord(GALAXIES_DIR, doc.id, doc);
     });
 
     res.status(201).json({ ok: true });
@@ -50,11 +53,19 @@ router.delete('/:id', async (req, res) => {
     const id = String(req.params.id);
 
     await withWriteLock(() => {
-      const galaxies = readJSON(GALAXIES_FILE).filter((g) => g.id !== id);
-      writeJSON(GALAXIES_FILE, galaxies);
+      deleteRecord(GALAXIES_DIR, id);
 
-      const memories = readJSON(MEMORIES_FILE).filter((m) => m.galaxyId !== id);
-      writeJSON(MEMORIES_FILE, memories);
+      // cascade: drop this galaxy's memories too
+      const index = readJSON(INDEX_FILE);
+      const remaining = [];
+      index.forEach((entry) => {
+        if (entry.galaxyId === id) {
+          deleteRecord(MEMORIES_DIR, entry.id);
+        } else {
+          remaining.push(entry);
+        }
+      });
+      writeJSON(INDEX_FILE, remaining);
     });
 
     res.json({ ok: true });

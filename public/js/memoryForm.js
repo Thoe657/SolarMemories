@@ -109,6 +109,85 @@ function compressImage(img, originalType) {
   });
 }
 
+// Re-encode audio down to a low-bitrate opus/webm clip so the gallery
+// stays fast and storage stays small, mirroring compressImage above. Falls
+// back to the raw file untouched if MediaRecorder/opus isn't supported.
+const AUDIO_MIME = 'audio/webm;codecs=opus';
+const AUDIO_BITRATE = 40000; // ~40kbps, within the 32-48kbps target
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressAudio(file) {
+  const canReencode = typeof MediaRecorder !== 'undefined'
+    && typeof MediaRecorder.isTypeSupported === 'function'
+    && MediaRecorder.isTypeSupported(AUDIO_MIME)
+    && (window.AudioContext || window.webkitAudioContext);
+
+  if (!canReencode) {
+    return readFileAsDataURL(file);
+  }
+
+  return new Promise((resolve) => {
+    const fallback = () => readFileAsDataURL(file).then(resolve);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      let audioCtx;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioCtx();
+        const audioBuffer = await audioCtx.decodeAudioData(e.target.result);
+
+        const dest = audioCtx.createMediaStreamDestination();
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(dest);
+
+        const recorder = new MediaRecorder(dest.stream, {
+          mimeType: AUDIO_MIME,
+          audioBitsPerSecond: AUDIO_BITRATE
+        });
+        const chunks = [];
+        recorder.ondataavailable = (ev) => {
+          if (ev.data.size > 0) chunks.push(ev.data);
+        };
+        recorder.onstop = () => {
+          audioCtx.close();
+          if (chunks.length === 0) {
+            fallback();
+            return;
+          }
+          const blob = new Blob(chunks, { type: AUDIO_MIME });
+          readFileAsDataURL(blob).then(resolve);
+        };
+        recorder.onerror = () => {
+          audioCtx.close();
+          fallback();
+        };
+
+        recorder.start();
+        source.start(0);
+        source.onended = () => {
+          // small tail so the recorder captures the last chunk
+          setTimeout(() => recorder.stop(), 200);
+        };
+      } catch (err) {
+        console.warn('Audio compression failed, using the original file', err);
+        if (audioCtx) audioCtx.close();
+        fallback();
+      }
+    };
+    reader.onerror = fallback;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 audioDrop.addEventListener('click', () => audioInput.click());
 audioInput.addEventListener('change', () => {
   const file = audioInput.files[0];
@@ -118,16 +197,14 @@ audioInput.addEventListener('change', () => {
     showStorageWarning('that audio file is fairly large for browser storage — connect a folder for unlimited space, or use a shorter/smaller clip.');
   }
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    pendingAudioDataUrl = e.target.result;
+  compressAudio(file).then((dataUrl) => {
+    pendingAudioDataUrl = dataUrl;
     audioPreview.src = pendingAudioDataUrl;
     audioPreview.style.display = 'block';
     audioDrop.textContent = file.name;
     audioDrop.classList.add('has-file');
     validateForm();
-  };
-  reader.readAsDataURL(file);
+  });
 });
 
 function validateForm() {
