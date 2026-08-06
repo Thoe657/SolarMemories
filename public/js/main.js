@@ -7,6 +7,7 @@ import { formatDate } from './cards.js';
 import { removeMemoryFromScene, setOnCardClick } from './scene.js';
 import { renderSolarSystem } from './galaxyPicker.js';
 import './memoryForm.js';
+import './entryScreen.js';
 import { memories, storageMode, setStorageMode, setGalaxiesCache } from './state.js';
 
 /* ============================================================
