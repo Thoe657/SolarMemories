@@ -19,8 +19,12 @@ export function isQuietMode() {
   return quiet;
 }
 
+export function prefersReducedMotion() {
+  return !!(reducedMotionQuery && reducedMotionQuery.matches);
+}
+
 export function shouldDampenMotion() {
-  return quiet || !!(reducedMotionQuery && reducedMotionQuery.matches);
+  return quiet || prefersReducedMotion();
 }
 
 export function setQuietMode(value) {
