@@ -14,6 +14,9 @@ const typeRow = document.getElementById('typeRow');
 const memTitle = document.getElementById('memTitle');
 const memDate = document.getElementById('memDate');
 const memMilestone = document.getElementById('memMilestone');
+const relatedSearch = document.getElementById('relatedSearch');
+const relatedResults = document.getElementById('relatedResults');
+const relatedChips = document.getElementById('relatedChips');
 const memText = document.getElementById('memText');
 const textLabel = document.getElementById('textLabel');
 const textField = document.getElementById('textField');
@@ -30,6 +33,7 @@ let currentType = 'photo';
 let pendingPhotoDataUrl = null;
 let pendingPhotoImg = null;
 let pendingAudioDataUrl = null;
+let pendingRelatedIds = [];
 
 const typeLabels = {
   photo: 'caption',
@@ -208,6 +212,70 @@ audioInput.addEventListener('change', () => {
   });
 });
 
+/* ============================================================
+   LINKED MEMORIES — "link to another memory..." picker
+============================================================ */
+function renderRelatedChips() {
+  relatedChips.innerHTML = '';
+  pendingRelatedIds.forEach((id) => {
+    const mem = memories.find((m) => String(m.id) === id);
+    if (!mem) return;
+    const chip = document.createElement('span');
+    chip.className = 'related-chip';
+
+    const label = document.createElement('span');
+    label.textContent = mem.title || 'untitled memory';
+    chip.appendChild(label);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      pendingRelatedIds = pendingRelatedIds.filter((x) => x !== id);
+      renderRelatedChips();
+    });
+    chip.appendChild(removeBtn);
+
+    relatedChips.appendChild(chip);
+  });
+}
+
+function renderRelatedResults(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    relatedResults.style.display = 'none';
+    relatedResults.innerHTML = '';
+    return;
+  }
+  const matches = memories
+    .filter((m) => (m.title || '').toLowerCase().includes(q) && !pendingRelatedIds.includes(String(m.id)))
+    .slice(0, 6);
+
+  if (matches.length === 0) {
+    relatedResults.style.display = 'none';
+    relatedResults.innerHTML = '';
+    return;
+  }
+
+  relatedResults.innerHTML = '';
+  matches.forEach((m) => {
+    const item = document.createElement('div');
+    item.className = 'related-result-item';
+    item.textContent = m.title || 'untitled memory';
+    item.addEventListener('click', () => {
+      pendingRelatedIds.push(String(m.id));
+      renderRelatedChips();
+      relatedSearch.value = '';
+      relatedResults.style.display = 'none';
+      relatedResults.innerHTML = '';
+    });
+    relatedResults.appendChild(item);
+  });
+  relatedResults.style.display = 'block';
+}
+
+relatedSearch.addEventListener('input', () => renderRelatedResults(relatedSearch.value));
+
 function validateForm() {
   let ok = memTitle.value.trim().length > 0;
   if (currentType === 'photo') ok = ok && !!pendingPhotoDataUrl;
@@ -234,6 +302,11 @@ function resetForm() {
   pendingPhotoDataUrl = null;
   pendingPhotoImg = null;
   pendingAudioDataUrl = null;
+  pendingRelatedIds = [];
+  relatedSearch.value = '';
+  relatedResults.style.display = 'none';
+  relatedResults.innerHTML = '';
+  renderRelatedChips();
   photoPreview.style.display = 'none';
   photoPreview.src = '';
   photoDrop.textContent = 'click to choose a photo';
@@ -261,7 +334,8 @@ saveMemBtn.addEventListener('click', async () => {
     photoData: pendingPhotoDataUrl,
     photoImg: pendingPhotoImg,
     audioData: pendingAudioDataUrl,
-    milestone: memMilestone.checked
+    milestone: memMilestone.checked,
+    relatedIds: pendingRelatedIds.slice()
   };
   memories.push(memory);
   addMemoryToScene(memory);

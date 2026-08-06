@@ -16,6 +16,35 @@ import { memories, storageMode, setStorageMode, setGalaxiesCache } from './state
 const readOverlay = document.getElementById('readOverlay');
 const readCard = document.getElementById('readCard');
 
+// Relationship is stored one-directionally (memory.relatedIds includes the
+// other memory's id) but displayed bidirectionally: also scan for any
+// memory whose relatedIds includes this one's id. Missing/trashed related
+// ids (no longer in the loaded `memories` array) are simply skipped.
+function getRelatedMemories(memory) {
+  const ids = new Set((memory.relatedIds || []).map(String));
+  memories.forEach((m) => {
+    if ((m.relatedIds || []).map(String).includes(String(memory.id))) {
+      ids.add(String(m.id));
+    }
+  });
+  ids.delete(String(memory.id));
+  return [...ids]
+    .map((id) => memories.find((m) => String(m.id) === id))
+    .filter(Boolean);
+}
+
+function renderRelatedMemoriesHtml(memory) {
+  const related = getRelatedMemories(memory);
+  if (related.length === 0) return '';
+  let html = '<div class="related-memories">';
+  related.forEach((m) => {
+    const thumb = m.type === 'photo' && m.photoData ? `<img src="${m.photoData}" alt="" />` : '';
+    html += `<button class="related-memory-chip" data-id="${escapeHtml(String(m.id))}">${thumb}<span>${escapeHtml(m.title || 'untitled memory')}</span></button>`;
+  });
+  html += '</div>';
+  return html;
+}
+
 function openReadView(memory) {
   let html = '';
   if (memory.type === 'photo' && memory.photoData) {
@@ -36,6 +65,7 @@ function openReadView(memory) {
   if (memory.type === 'audio' && memory.audioData) {
     html += `<audio class="read-audio" controls src="${memory.audioData}"></audio>`;
   }
+  html += renderRelatedMemoriesHtml(memory);
   html += `<button class="read-close" id="closeReadBtn">close</button>`;
   html += `<button class="read-delete" id="deleteMemBtn">delete this memory</button>`;
   html += `<div class="confirm-row hidden" id="deleteConfirmRow" style="display:none;">
@@ -46,6 +76,13 @@ function openReadView(memory) {
   readCard.innerHTML = html;
   readOverlay.classList.add('visible');
   document.getElementById('closeReadBtn').addEventListener('click', closeReadView);
+
+  readCard.querySelectorAll('.related-memory-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const target = memories.find((m) => String(m.id) === chip.dataset.id);
+      if (target) openReadView(target); // swaps in place, doesn't close/reopen
+    });
+  });
 
   const deleteBtn = document.getElementById('deleteMemBtn');
   const confirmRow = document.getElementById('deleteConfirmRow');

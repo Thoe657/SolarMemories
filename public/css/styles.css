@@ -949,3 +949,109 @@
     padding: 2px 10px;
     margin: 0 0 6px;
   }
+
+  /* ---------- Linked memories: add-form picker ---------- */
+  .related-picker {
+    position: relative;
+  }
+
+  .related-results {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fffdfa;
+    border: 1.5px solid #ecdfce;
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.12);
+    max-height: 160px;
+    overflow-y: auto;
+  }
+
+  .related-result-item {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--card-text);
+    cursor: pointer;
+  }
+
+  .related-result-item:hover {
+    background: #f3ece1;
+  }
+
+  .related-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .related-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f3ece1;
+    color: var(--card-text);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 6px 4px 10px;
+    border-radius: 999px;
+  }
+
+  .related-chip button {
+    background: transparent;
+    border: none;
+    color: #8a7a68;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+
+  .related-chip button:hover {
+    color: var(--accent-deep);
+  }
+
+  /* ---------- Linked memories: read view chips ---------- */
+  .related-memories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .related-memory-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 140px;
+    background: #f3ece1;
+    border: none;
+    border-radius: 999px;
+    padding: 4px 12px 4px 4px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--card-text);
+    cursor: pointer;
+  }
+
+  .related-memory-chip:hover {
+    background: var(--accent);
+    color: #6e2530;
+  }
+
+  .related-memory-chip img {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .related-memory-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
