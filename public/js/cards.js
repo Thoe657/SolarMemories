@@ -14,11 +14,23 @@ export function makePolaroidTexture(memory) {
   roundRect(ctx, 0, 0, W, H, 14);
   ctx.fill();
 
-  // subtle border
-  ctx.strokeStyle = 'rgba(0,0,0,0.04)';
-  ctx.lineWidth = 2;
-  roundRect(ctx, 1, 1, W-2, H-2, 14);
-  ctx.stroke();
+  // border: plain by default, gold-toned + thicker for milestone memories
+  if (memory.milestone) {
+    ctx.strokeStyle = '#c99a2e';
+    ctx.lineWidth = 8;
+    roundRect(ctx, 4, 4, W-8, H-8, 14);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255, 217, 160, 0.6)';
+    ctx.lineWidth = 2;
+    roundRect(ctx, 9, 9, W-18, H-18, 12);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+    ctx.lineWidth = 2;
+    roundRect(ctx, 1, 1, W-2, H-2, 14);
+    ctx.stroke();
+  }
 
   const photoArea = { x: 24, y: 24, w: W - 48, h: 400 };
 

@@ -25,6 +25,9 @@ function openReadView(memory) {
   if (memory.date) {
     html += `<p class="read-date">${formatDate(memory.date)}</p>`;
   }
+  if (memory.milestone) {
+    html += `<span class="milestone-badge">✦ milestone</span>`;
+  }
   html += `<h2 class="read-title">${escapeHtml(memory.title || 'untitled memory')}</h2>`;
   if (memory.text) {
     const cls = memory.type === 'letter' ? 'read-text letter' : 'read-text';
