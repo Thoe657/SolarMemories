@@ -6,6 +6,7 @@ import { makePolaroidTexture, roundRect } from './cards.js';
 import { loadAllMemories } from './api.js';
 import { showStorageWarning } from './util.js';
 import { memories } from './state.js';
+import { shouldDampenMotion } from './audioManager.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -474,29 +475,35 @@ function animate(now = 0) {
   pitch += (targetPitch - pitch) * 0.08;
   updateCameraFromAngles();
 
+  // Quiet mode (or OS-level prefers-reduced-motion) slows/pauses the
+  // ambient drift animations below — 1 is full motion, near-0 is nearly still.
+  const motionDamp = shouldDampenMotion() ? 0.12 : 1;
+
   // gentle bob/sway for cards, rotation stays anchored to face the viewer.
   // Skip any card cardFlip.js is currently animating/holding open, so the
   // two animation systems don't fight over rotation.y each frame.
   cardGroup.children.forEach((mesh) => {
     if (mesh.userData.flipping) return;
     const ud = mesh.userData;
-    mesh.position.y = ud.basePos.y + Math.sin(t * ud.bobSpeed + ud.bobOffset) * 0.08;
-    mesh.rotation.y = ud.baseRotY + Math.sin(t * ud.bobSpeed * 0.3 + ud.bobOffset) * 0.05;
-    mesh.rotation.z = ud.baseRotZ + Math.sin(t * ud.bobSpeed * 0.5 + ud.bobOffset) * 0.03;
+    mesh.position.y = ud.basePos.y + Math.sin(t * ud.bobSpeed + ud.bobOffset) * 0.08 * motionDamp;
+    mesh.rotation.y = ud.baseRotY + Math.sin(t * ud.bobSpeed * 0.3 + ud.bobOffset) * 0.05 * motionDamp;
+    mesh.rotation.z = ud.baseRotZ + Math.sin(t * ud.bobSpeed * 0.5 + ud.bobOffset) * 0.03 * motionDamp;
   });
 
   // twinkle + drift floating lights
   fairyGroup.children.forEach((obj) => {
     if (obj.userData.twinklePhase !== undefined) {
-      const flick = 0.6 + 0.4 * Math.sin(t * obj.userData.twinkleSpeed + obj.userData.twinklePhase);
+      const rawFlick = 0.6 + 0.4 * Math.sin(t * obj.userData.twinkleSpeed + obj.userData.twinklePhase);
+      // dampened: blend toward a steady 1 (no flicker) instead of fully off
+      const flick = motionDamp < 1 ? 1 - (1 - rawFlick) * motionDamp : rawFlick;
       obj.material.opacity = obj.userData.baseOpacity * flick;
 
       // gentle drifting motion around the base position
       const d = obj.userData.driftSpeed;
       const p = obj.userData.driftPhase;
-      obj.position.x = obj.userData.basePos.x + Math.sin(t * d + p) * 0.4;
-      obj.position.y = obj.userData.basePos.y + Math.cos(t * d * 0.8 + p) * 0.4;
-      obj.position.z = obj.userData.basePos.z + Math.sin(t * d * 0.6 + p) * 0.4;
+      obj.position.x = obj.userData.basePos.x + Math.sin(t * d + p) * 0.4 * motionDamp;
+      obj.position.y = obj.userData.basePos.y + Math.cos(t * d * 0.8 + p) * 0.4 * motionDamp;
+      obj.position.z = obj.userData.basePos.z + Math.sin(t * d * 0.6 + p) * 0.4 * motionDamp;
 
       if (obj.userData.glow) {
         obj.userData.glow.material.opacity = 0.18 * flick;
@@ -506,7 +513,7 @@ function animate(now = 0) {
   });
 
   // gentle star twinkle via scene rotation
-  stars.rotation.y = t * 0.005;
+  stars.rotation.y = t * 0.005 * motionDamp;
 
   renderer.render(scene, camera);
 }
