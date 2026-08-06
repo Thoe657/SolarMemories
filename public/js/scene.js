@@ -193,8 +193,44 @@ function getCardPosition(index) {
   return { pos: new THREE.Vector3(x, y, z), angle };
 }
 
+/* ============================================================
+   TEXTURE CACHE — in-memory Map<memoryId, CanvasTexture>, scoped to
+   this page session. Re-entering a previously visited galaxy skips
+   regenerating (canvas-drawing) unchanged memories' textures.
+   NOTE: memory content editing isn't supported yet (Phase 6's
+   relatedIds don't affect the visual texture), so cache invalidation
+   is a non-issue for now — this cache MUST be invalidated (or have
+   the relevant entry deleted) if memory-content editing is ever added.
+============================================================ */
+const textureCache = new Map();
+
+function getCachedTexture(id) {
+  return textureCache.get(id);
+}
+
+function cacheTexture(id, tex) {
+  tex.userData.cached = true;
+  textureCache.set(id, tex);
+}
+
+// A card's map is only disposed if it isn't a shared, cached texture —
+// disposing a cached texture here would break it for the next cache hit.
+function disposeCardMesh(mesh) {
+  if (mesh.material.map && !mesh.material.map.userData?.cached) {
+    mesh.material.map.dispose();
+  }
+  mesh.material.dispose();
+  mesh.geometry.dispose();
+}
+
 export function addMemoryToScene(memory) {
-  const tex = makePolaroidTexture(memory);
+  const cached = getCachedTexture(memory.id);
+  // A photo memory's texture isn't "final" until its image has decoded
+  // (refreshMemoryTexture regenerates + caches it then) — don't cache the
+  // interim placeholder-ish draw, or a re-entry would get stuck without it.
+  const stillAwaitingPhoto = memory.type === 'photo' && memory.photoData && !memory.photoImg;
+  const tex = cached || makePolaroidTexture(memory);
+  if (!cached && !stillAwaitingPhoto) cacheTexture(memory.id, tex);
   const aspect = 512 / 600;
   const height = 1.8;
   const width = height * aspect;
@@ -277,9 +313,11 @@ export function clearLoadingPlaceholders() {
 function refreshMemoryTexture(memory) {
   if (!memory.mesh) return;
   const newTex = makePolaroidTexture(memory);
-  memory.mesh.material.map.dispose();
+  const oldMap = memory.mesh.material.map;
+  if (oldMap && !oldMap.userData?.cached) oldMap.dispose();
   memory.mesh.material.map = newTex;
   memory.mesh.material.needsUpdate = true;
+  cacheTexture(memory.id, newTex);
 }
 
 function loadPhotoImgFor(memory) {
@@ -296,9 +334,7 @@ function loadPhotoImgFor(memory) {
 // different galaxy's memories to be loaded in.
 export function clearGalleryScene() {
   cardGroup.children.slice().forEach((mesh) => {
-    mesh.material.map?.dispose();
-    mesh.material.dispose();
-    mesh.geometry.dispose();
+    disposeCardMesh(mesh);
     cardGroup.remove(mesh);
   });
   memories.length = 0;
@@ -318,7 +354,9 @@ export async function loadGalaxyMemories(galaxyId) {
   restored.forEach((mem) => {
     memories.push(mem);
     addMemoryToScene(mem);
-    loadPhotoImgFor(mem);
+    // a cache hit already has its final texture (photo decoded and all) —
+    // no need to re-decode the image and regenerate it
+    if (!getCachedTexture(mem.id)) loadPhotoImgFor(mem);
   });
 }
 
@@ -326,11 +364,10 @@ export async function loadGalaxyMemories(galaxyId) {
 // resources) without touching the `memories` array.
 export function removeMemoryFromScene(memory) {
   if (memory.mesh) {
-    memory.mesh.material.map?.dispose();
-    memory.mesh.material.dispose();
-    memory.mesh.geometry.dispose();
+    disposeCardMesh(memory.mesh);
     cardGroup.remove(memory.mesh);
   }
+  textureCache.delete(memory.id);
 }
 
 /* ============================================================
