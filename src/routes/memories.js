@@ -1,6 +1,7 @@
 const express = require('express');
-const { MEMORIES_FILE, MAX_DOC_SIZE, ALLOWED_TYPES } = require('../config');
+const { MEMORIES_FILE } = require('../config');
 const { readJSON, writeJSON, withWriteLock } = require('../lib/storage');
+const { validateMemory } = require('../lib/validate');
 
 const router = express.Router();
 
@@ -24,33 +25,9 @@ router.get('/', (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { id, galaxyId, type, title, date, text, photoData, audioData } = req.body || {};
-
-    if (!id || !ALLOWED_TYPES.includes(type)) {
-      return res.status(400).json({ error: 'invalid memory: id and a valid type are required' });
-    }
-    if (!galaxyId || typeof galaxyId !== 'string') {
-      return res.status(400).json({ error: 'invalid memory: galaxyId is required' });
-    }
-    if (!title || typeof title !== 'string') {
-      return res.status(400).json({ error: 'invalid memory: title is required' });
-    }
-
-    const doc = {
-      id: String(id),
-      galaxyId: String(galaxyId),
-      type,
-      title: String(title).slice(0, 200),
-      date: date ? String(date).slice(0, 32) : null,
-      text: text ? String(text).slice(0, 20000) : null,
-      photoData: photoData || null,
-      audioData: audioData || null,
-      createdAt: new Date().toISOString(),
-    };
-
-    const approxSize = Buffer.byteLength(JSON.stringify(doc), 'utf8');
-    if (approxSize > MAX_DOC_SIZE) {
-      return res.status(413).json({ error: 'memory too large — try a smaller photo or audio clip' });
+    const { ok, doc, errors } = validateMemory(req.body);
+    if (!ok) {
+      return res.status(400).json({ error: errors[0] });
     }
 
     await withWriteLock(() => {

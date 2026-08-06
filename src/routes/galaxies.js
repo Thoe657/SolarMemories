@@ -1,6 +1,7 @@
 const express = require('express');
 const { GALAXIES_FILE, MEMORIES_FILE } = require('../config');
 const { readJSON, writeJSON, withWriteLock } = require('../lib/storage');
+const { validateGalaxy } = require('../lib/validate');
 
 const router = express.Router();
 
@@ -19,18 +20,10 @@ router.get('/', (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { id, name, accentColor, ring } = req.body || {};
-    if (!id || !name || typeof name !== 'string') {
-      return res.status(400).json({ error: 'invalid galaxy: id and name are required' });
+    const { ok, doc, errors } = validateGalaxy(req.body);
+    if (!ok) {
+      return res.status(400).json({ error: errors[0] });
     }
-    const ringNum = Number.isInteger(ring) && ring >= 1 && ring <= 3 ? ring : 1;
-    const doc = {
-      id: String(id),
-      name: String(name).slice(0, 60),
-      accentColor: accentColor ? String(accentColor).slice(0, 20) : '#ffd9a0',
-      ring: ringNum,
-      createdAt: new Date().toISOString(),
-    };
 
     await withWriteLock(() => {
       const galaxies = readJSON(GALAXIES_FILE);
