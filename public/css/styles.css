@@ -885,3 +885,34 @@
   .trash-item-actions .trash-forever-btn {
     color: #b23a3a;
   }
+
+  /* ---------- Backup toast ---------- */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translate(-50%, 12px);
+    background: var(--ui-bg);
+    border: 1px solid var(--ui-border);
+    color: var(--light-glow);
+    font-family: 'Quicksand', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 999px;
+    backdrop-filter: blur(6px);
+    z-index: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+
+  .toast.visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  .toast.error {
+    border-color: rgba(239, 159, 39, 0.5);
+    color: #ffd9a0;
+  }

@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "archiver": "^7.0.1",
     "express": "^5.2.1"
   }
-  
 }
