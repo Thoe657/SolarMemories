@@ -6,6 +6,7 @@ import { createGalaxyRemote, deleteGalaxyRemote, loadTrashedMemories, restoreMem
 import { showStorageWarning } from './util.js';
 import { clearGalleryScene, loadGalaxyMemories, showLoadingPlaceholders } from './scene.js';
 import { currentGalaxy, galaxiesCache, setCurrentGalaxy, setGalaxiesCache } from './state.js';
+import { playUiSound } from './audioManager.js';
 
 /* ============================================================
    GALAXY PICKER — twinkling background stars
@@ -360,6 +361,7 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
 
 // Enter a galaxy: hyperspace transition, then swap content underneath.
 async function selectGalaxy(galaxy) {
+  playUiSound('select');
   setCurrentGalaxy(galaxy);
 
   await playHyperspace(() => {
