@@ -23,6 +23,7 @@
     overflow: hidden;
     font-family: 'Quicksand', sans-serif;
     background: linear-gradient(to bottom, var(--bg-top), var(--bg-bottom));
+    touch-action: none;
   }
 
   #scene-container {
@@ -45,6 +46,7 @@
     align-items: center;
     padding: 18px 24px;
     pointer-events: none;
+    touch-action: none;
     z-index: 10;
   }
 

@@ -365,6 +365,11 @@ updateCameraFromAngles();
 
 renderer.domElement.style.touchAction = 'none';
 
+// Safari fires non-standard gesturestart/gesturechange events for
+// pinch-zoom that `touch-action: none` alone doesn't fully suppress there.
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('gesturechange', (e) => e.preventDefault());
+
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (dragLocked) return;
   isDragging = true;
