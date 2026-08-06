@@ -20,6 +20,9 @@ const INDEX_FILE = path.join(DATA_DIR, 'index.json');
 const MAX_DOC_SIZE = 8 * 1024 * 1024; // 8MB safety margin
 const ALLOWED_TYPES = ['photo', 'letter', 'audio'];
 
+// How long a soft-deleted record stays in `deleted/` before being purged.
+const TRASH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 module.exports = {
   PORT,
   DATA_DIR,
@@ -30,4 +33,5 @@ module.exports = {
   INDEX_FILE,
   MAX_DOC_SIZE,
   ALLOWED_TYPES,
+  TRASH_MAX_AGE_MS,
 };

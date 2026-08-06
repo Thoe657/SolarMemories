@@ -25,6 +25,7 @@ function validateGalaxy(body) {
     name: String(name).slice(0, 60),
     accentColor: accentColor ? String(accentColor).slice(0, 20) : '#ffd9a0',
     ring: ringNum,
+    deletedAt: null,
     createdAt: new Date().toISOString(),
   };
 
@@ -67,6 +68,7 @@ function validateMemory(body) {
     text: text ? String(text).slice(0, 20000) : null,
     photoData: photoData || null,
     audioData: audioData || null,
+    deletedAt: null,
     createdAt: new Date().toISOString(),
   };
 

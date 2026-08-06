@@ -823,3 +823,65 @@
     flex: 0 1 auto;
     padding: 12px 36px;
   }
+
+  /* ---------- Trash (edit-galaxy panel) ---------- */
+  .trash-list {
+    max-height: 160px;
+    overflow-y: auto;
+    border: 1.5px solid #ecdfce;
+    border-radius: 10px;
+    padding: 4px 6px;
+  }
+
+  .trash-empty {
+    font-size: 12px;
+    color: #b3a18c;
+    padding: 8px 4px;
+  }
+
+  .trash-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 4px;
+    border-bottom: 1px solid #f3ece1;
+    font-size: 13px;
+  }
+
+  .trash-item:last-child {
+    border-bottom: none;
+  }
+
+  .trash-item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .trash-item-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .trash-item-actions button {
+    background: transparent;
+    border: none;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: var(--accent-deep);
+  }
+
+  .trash-item-actions button:hover {
+    background: #f3ece1;
+  }
+
+  .trash-item-actions .trash-forever-btn {
+    color: #b23a3a;
+  }
