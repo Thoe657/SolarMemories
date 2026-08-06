@@ -54,3 +54,5 @@ temp/
 docs/
 node/
 data/
+data.bak-*/
+backups/
