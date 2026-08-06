@@ -12,18 +12,71 @@ import { currentGalaxy, galaxiesCache, setCurrentGalaxy, setGalaxiesCache } from
 ============================================================ */
 (function setupPickerStars() {
   const starsContainer = document.getElementById('startStars');
-  const starCount = 120;
-  for (let i = 0; i < starCount; i++) {
-    const star = document.createElement('span');
-    star.style.left = `${Math.random() * 100}%`;
-    star.style.top = `${Math.random() * 100}%`;
-    const size = Math.random() < 0.85 ? 1 + Math.random() * 1.5 : 2.5 + Math.random() * 1.5;
-    star.style.width = `${size}px`;
-    star.style.height = `${size}px`;
-    star.style.animationDelay = `${Math.random() * 3}s`;
-    star.style.animationDuration = `${2.5 + Math.random() * 2.5}s`;
-    starsContainer.appendChild(star);
+
+  // Depth layers: more/smaller/slower-drifting stars toward the back, fewer/
+  // larger/more-parallaxed ones up front.
+  const layers = [
+    { count: 60, size: [1, 1.8], duration: [2.5, 5], parallax: 6 },
+    { count: 40, size: [1.5, 2.5], duration: [2.2, 4.2], parallax: 14 },
+    { count: 20, size: [2, 3.5], duration: [2, 3.5], parallax: 26 },
+  ];
+
+  const layerEls = layers.map((layer) => {
+    const layerEl = document.createElement('div');
+    layerEl.className = 'star-layer';
+    for (let i = 0; i < layer.count; i++) {
+      const star = document.createElement('span');
+      star.style.left = `${Math.random() * 100}%`;
+      star.style.top = `${Math.random() * 100}%`;
+      const size = layer.size[0] + Math.random() * (layer.size[1] - layer.size[0]);
+      star.style.width = `${size}px`;
+      star.style.height = `${size}px`;
+      star.style.animationDelay = `${Math.random() * 3}s`;
+      star.style.animationDuration = `${layer.duration[0] + Math.random() * (layer.duration[1] - layer.duration[0])}s`;
+      layerEl.appendChild(star);
+    }
+    starsContainer.appendChild(layerEl);
+    return { el: layerEl, parallax: layer.parallax };
+  });
+
+  // Subtle parallax tied to pointer position -- each layer drifts opposite
+  // the pointer by its own amount, and the CSS transition on .star-layer
+  // smooths/lags the movement instead of tracking it 1:1.
+  window.addEventListener('pointermove', (e) => {
+    const nx = e.clientX / window.innerWidth - 0.5;
+    const ny = e.clientY / window.innerHeight - 0.5;
+    layerEls.forEach(({ el, parallax }) => {
+      el.style.transform = `translate(${-nx * parallax}px, ${-ny * parallax}px)`;
+    });
+  });
+
+  // Occasional shooting stars, every 8-15s (randomized so there's no
+  // noticeable fixed rhythm), each removing itself once its animation ends.
+  function spawnShootingStar() {
+    const el = document.createElement('div');
+    el.className = 'shooting-star';
+    const startX = Math.random() * 70;
+    const startY = Math.random() * 40;
+    const angle = 25 + Math.random() * 20;
+    const distance = 220 + Math.random() * 160;
+    const duration = 900 + Math.random() * 500;
+    el.style.left = `${startX}%`;
+    el.style.top = `${startY}%`;
+    el.style.setProperty('--angle', `${angle}deg`);
+    el.style.setProperty('--distance', `${distance}px`);
+    el.style.animationDuration = `${duration}ms`;
+    starsContainer.appendChild(el);
+    el.addEventListener('animationend', () => el.remove());
   }
+
+  function scheduleShootingStar() {
+    const delay = 8000 + Math.random() * 7000;
+    setTimeout(() => {
+      spawnShootingStar();
+      scheduleShootingStar();
+    }, delay);
+  }
+  scheduleShootingStar();
 })();
 
 /* ============================================================
