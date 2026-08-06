@@ -17,6 +17,11 @@ const GALAXIES_DIR = path.join(DATA_DIR, 'galaxies');
 const MEMORIES_DIR = path.join(DATA_DIR, 'memories');
 const INDEX_FILE = path.join(DATA_DIR, 'index.json');
 
+// Zipped backups of data/, sibling of data/ (not inside it).
+const BACKUPS_DIR = path.join(__dirname, '..', 'backups');
+const BACKUP_KEEP_COUNT = 10;
+const BACKUP_STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 const MAX_DOC_SIZE = 8 * 1024 * 1024; // 8MB safety margin
 const ALLOWED_TYPES = ['photo', 'letter', 'audio'];
 
@@ -31,6 +36,9 @@ module.exports = {
   GALAXIES_DIR,
   MEMORIES_DIR,
   INDEX_FILE,
+  BACKUPS_DIR,
+  BACKUP_KEEP_COUNT,
+  BACKUP_STALE_MS,
   MAX_DOC_SIZE,
   ALLOWED_TYPES,
   TRASH_MAX_AGE_MS,

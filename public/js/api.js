@@ -128,3 +128,12 @@ export async function deleteMemoryForever(id) {
     throw new Error(body.error || `delete failed (${resp.status})`);
   }
 }
+
+export async function createBackupRemote() {
+  const resp = await fetch('/api/backup', { method: 'POST' });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.error || `backup failed (${resp.status})`);
+  }
+  return resp.json();
+}

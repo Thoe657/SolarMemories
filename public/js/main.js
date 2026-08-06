@@ -1,7 +1,7 @@
 /* ============================================================
    MAIN — read view UI, startup, and wiring between modules
 ============================================================ */
-import { tryRestoreStorage, loadGalaxies, deleteMemory as deleteMemoryRemote } from './api.js';
+import { tryRestoreStorage, loadGalaxies, deleteMemory as deleteMemoryRemote, createBackupRemote } from './api.js';
 import { escapeHtml, showStorageWarning, updateStorageStatusUI } from './util.js';
 import { formatDate } from './cards.js';
 import { removeMemoryFromScene, setOnCardClick } from './scene.js';
@@ -94,6 +94,35 @@ readOverlay.addEventListener('click', (e) => {
 });
 
 setOnCardClick(openReadView);
+
+/* ============================================================
+   BACKUP
+============================================================ */
+const backupBtn = document.getElementById('backupBtn');
+const backupToast = document.getElementById('backupToast');
+let toastTimer = null;
+
+function showToast(msg, isError = false) {
+  backupToast.textContent = msg;
+  backupToast.classList.toggle('error', isError);
+  backupToast.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => backupToast.classList.remove('visible'), 3200);
+}
+
+backupBtn.addEventListener('click', async () => {
+  backupBtn.disabled = true;
+  showToast('backing up…');
+  try {
+    await createBackupRemote();
+    showToast('backup saved ✦');
+  } catch (e) {
+    console.warn('Backup failed', e);
+    showToast(`backup failed — ${e.message || 'try again'}`, true);
+  } finally {
+    backupBtn.disabled = false;
+  }
+});
 
 /* ============================================================
    STARTUP & GALAXY SWITCHING
