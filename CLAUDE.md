@@ -19,64 +19,98 @@ npm start          # node server.js — serves the app at http://localhost:3000
   bundled Node binary (for running the app without a system-wide Node install). Both
   `node/` and `start.command` need `chmod +x` before first use on macOS.
 - `DATA_DIR` env var overrides where JSON data is stored (defaults to `./data`).
+- `node scripts/migrate.js --dry-run` previews migrating the legacy flat
+  `data/galaxies.json`/`data/memories.json` files (kept as an inert `.bak` reference,
+  see below) into the current one-file-per-record layout; only needed once per install.
+- `node scripts/build-backgrounds.js` regenerates the baked nebula background PNGs
+  under `public/assets/backgrounds/`; only needed to change that art, not for normal
+  use. Requires the `canvas` devDependency (native, not needed by `npm start`).
 
 ## Architecture
 
-**Currently a two-file monolith** — everything is in `server.js` and `public/index.html`.
-A phased refactor into `src/` (backend) and `public/js/`+`public/css/` (frontend) modules
-is planned but not yet started; see "Development plan" below before making structural changes.
+Modular, no build step: backend under `src/`, frontend as native ES modules under
+`public/js/` + `public/css/styles.css`, `public/index.html` is markup-only. `server.js`
+is a thin entrypoint (config, middleware, mount routes, listen, startup backup check).
 
-### Backend (`server.js`)
-Thin Express app with a hand-rolled JSON-file "database":
-- Two flat files: `data/galaxies.json`, `data/memories.json`.
-- `readJSON`/`writeJSON` read/write the whole file each time; writes are atomic
-  (write to `.tmp`, then `fs.renameSync`).
-- `withWriteLock` chains a module-level `writeQueue` promise so concurrent requests
-  serialize their read-modify-write cycles instead of racing.
-- Routes: `GET/POST /api/galaxies`, `DELETE /api/galaxies/:id` (cascades — also deletes
-  that galaxy's memories), `GET /api/memories?galaxy=<id>`, `POST /api/memories`,
-  `DELETE /api/memories/:id`.
-- Photos/audio are stored inline as base64 data URLs directly in the JSON records
-  (no separate blob storage). `MAX_DOC_SIZE` caps a single memory doc at 8MB; the
-  Express JSON body parser is capped at 12mb.
+### Backend (`src/`)
+- `config.js` — `PORT`, `DATA_DIR`, per-record dirs, `MAX_DOC_SIZE`, `ALLOWED_TYPES`, trash/backup timing constants.
+- `lib/storage.js` — one-file-per-record JSON storage: `data/galaxies/<id>.json`,
+  `data/memories/<id>.json`, plus `data/index.json` (a denormalized list mirroring full
+  memory records, including `photoData`/`audioData`, so the ring view doesn't need a
+  per-card fetch). Atomic writes (`.tmp` + rename) and a `withWriteLock` promise chain
+  for concurrent-request safety, same as before.
+- `lib/validate.js` — pure `validateGalaxy`/`validateMemory` functions (`{ ok, doc, errors }`),
+  no Express dependency. Validates required fields, `ring` clamped 1-3, `photoData`/`audioData`
+  must be well-formed data URLs of the right media type, `date` must parse, and payload
+  size is checked against the *decoded* byte length of any base64 payload.
+- `lib/archive.js` — soft delete: `archiveRecord`/`restoreRecord`/`purgeRecord` move
+  records into a `deleted/` subfolder of their normal dir (e.g. `memories/deleted/<id>.json`)
+  instead of removing files; `sweepDeleted` permanently purges anything older than
+  `TRASH_MAX_AGE_MS` (30 days), run once on server start.
+- `lib/zipBackup.js` — zips all of `data/` into `backups/backup-<ISO-timestamp>.zip`,
+  keeping the most recent `BACKUP_KEEP_COUNT` (10); `server.js` triggers one on startup
+  if the newest is stale or missing.
+- `routes/galaxies.js`, `routes/memories.js`, `routes/backup.js` — route handlers.
+  Memories routes: `GET /` (reads the index), `GET /trash`, `GET /:id` (full record),
+  `POST /`, `POST /:id/restore`, `DELETE /:id` (soft delete), `DELETE /:id/forever`.
+  Galaxy delete cascades: archives the galaxy and archives its (non-deleted) memories too.
+
+### Frontend (`public/`)
+`public/js/main.js` is the module entrypoint (imported via `<script type="module">`),
+wiring the others together, calling `init()`, and wiring the quiet-mode toggle. Modules:
+`state.js` (shared mutable app state — `memories`, `currentGalaxy*`, `storageMode`,
+`galaxiesCache` — with setters since ES module bindings can only be reassigned by their
+own module), `util.js` (`escapeHtml`, storage-status helpers), `api.js` (`fetch()`
+wrappers), `cards.js` (polaroid + card-back canvas textures), `scene.js` (Three.js
+renderer/camera/lights/background/animate loop, card meshes, camera drag controls —
+exposes a `setOnCardClick` callback rather than importing the click-handling module
+directly, to avoid a circular import; also owns the in-memory per-session texture
+cache and the adaptive-quality frame-time benchmark — see below), `galaxyPicker.js`
+(solar system rendering, hyperspace transition, new/edit-galaxy forms, starfield
+parallax + shooting stars), `memoryForm.js` (add-memory form, photo/audio
+compression), `entryScreen.js` (one-time nebula start screen, 2D canvas, gates the
+already-initializing picker, starts ambient audio on Enter — a valid user gesture),
+`cardFlip.js` (click a card → it flips in 3D, then a DOM panel fades in with the full
+content, replacing the old disconnected read-overlay modal), `audioManager.js`
+(looping Web Audio ambient pad + short UI blips, quiet-mode toggle persisted via
+`localStorage`, and the shared `shouldDampenMotion()`/`prefersReducedMotion()` reads
+that `scene.js` uses to slow ambient animation and force low quality respectively).
+
+Two perf/asset notes:
+- `scene.js` caches each memory's generated `CanvasTexture` in an in-memory
+  `Map<memoryId, texture>` for the page session, so re-entering a previously visited
+  galaxy skips regenerating unchanged cards' textures. This has no invalidation
+  logic — fine today since there's no way to edit an existing memory's content, but
+  **must** be added if memory editing is ever built.
+- The starry background is a handful of pre-baked PNGs (`public/assets/backgrounds/`,
+  generated by `scripts/build-backgrounds.js`) loaded via `THREE.TextureLoader` and
+  picked at random per session, rather than drawn on a canvas at runtime. Pixel ratio,
+  the distant twinkling-star count, and target FPS adapt at runtime based on a
+  frame-time benchmark over the first ~60 frames (`scene.js`'s `applyLowQuality()`),
+  replacing an old `hardwareConcurrency`/user-agent heuristic; `prefers-reduced-motion`
+  short-circuits straight to the low-quality path regardless of that benchmark.
 - Data schema:
-  - galaxy: `{ id, name, accentColor, ring (1-3), createdAt }`
-  - memory: `{ id, galaxyId, type ('photo'|'letter'|'audio'), title, date, text, photoData, audioData, createdAt }`
-
-### Frontend (`public/index.html`)
-Single file: inline `<style>` block followed by inline `<script>` (no build step, no
-framework — vanilla JS + Three.js loaded from a CDN `<script>` tag). Rough shape of the
-script section:
-- API helpers (`loadGalaxies`, `createGalaxyRemote`, `deleteGalaxyRemote`, `persistMemory`,
-  `loadAllMemories`, `deleteMemory`) — thin `fetch()` wrappers around the backend routes.
-- Three.js scene setup — camera, renderer, procedurally-painted nebula background
-  (`paintGlow`), starfield, floating "fairy light" decorations, and drag-to-look camera
-  controls (pointerdown/pointermove on the canvas).
-- Card rendering — `makePolaroidTexture` draws a memory (photo/letter/audio) onto a
-  canvas as a polaroid-style texture, mapped onto a `THREE.PlaneGeometry` mesh via
-  `addMemoryToScene`. Cards are laid out in a ring via `getCardPosition`.
-- Galaxy picker — `renderSolarSystem`/`addPlanet` draw galaxies as orbiting planets
-  around a central sun; clicking one plays a hyperspace transition (`playHyperspace`)
-  into that galaxy's ring of memory cards (`selectGalaxy` → `loadGalaxyMemories`).
-  `showGalaxyPicker`/`backToGalaxiesBtn` return to the picker.
-- Add/edit forms — add-memory overlay (type selector, photo/audio drag-drop with
-  client-side image compression via `compressImage`), add-galaxy and edit-galaxy overlays
-  (color/ring pickers), delete confirmation flows for both memories and galaxies.
-- Read view — `openReadView`/`closeReadView` show a memory's full content (text, image,
-  audio player) in a modal overlay.
-- `init()` at the bottom wires everything up and does the initial data load.
+  - galaxy: `{ id, name, accentColor, ring (1-3), deletedAt, createdAt }`
+  - memory: `{ id, galaxyId, type ('photo'|'letter'|'audio'), title, date, text, photoData, audioData, milestone, relatedIds, deletedAt, createdAt }`
 
 ## Data safety
 
 `data/` holds real personal photos/letters/audio and is gitignored — never assume it's
 disposable. `docs/` and `node/` are also gitignored (present locally, not tracked).
+`backups/` (zipped snapshots of `data/`) is a sibling of `data/`, also not tracked.
 
 ## Development plan
 
-[docs/PLAN.md](docs/PLAN.md) has a detailed, phase-by-phase plan for refactoring this app
-(file structure split, validation, per-record storage, archive-not-delete, backups, and a
-number of feature/perf phases). If asked to do structural or feature work here, **read that
-file first** — it specifies strict rules that override general habits:
+[docs/PLAN.md](docs/PLAN.md) has the original detailed, phase-by-phase plan for
+refactoring this app (file structure split, validation, per-record storage,
+archive-not-delete, backups, and a number of feature/perf phases). **All phases (0
+through 14) are complete and merged to `main`.** [docs/PLAN_SUMMARY.md](docs/PLAN_SUMMARY.md)
+summarizes what each phase actually built, decisions made along the way, and what was
+manually tested. There is no more plan work queued — treat any further structural or
+feature work as new, scoped from scratch, not as a continuation of PLAN.md.
+
+If a future plan of this kind gets started, the same rules applied throughout this one
+are worth reusing:
 - One git branch per phase; don't combine phases or skip ahead.
 - Restate the phase's plan and file list before writing code; stop and ask if anything is
   ambiguous, especially anything touching `data/`.
