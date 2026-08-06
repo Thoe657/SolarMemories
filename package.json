@@ -13,5 +13,8 @@
   "dependencies": {
     "archiver": "^7.0.1",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "canvas": "^3.2.3"
   }
 }

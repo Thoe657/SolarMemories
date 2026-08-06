@@ -38,65 +38,17 @@ const hemi = new THREE.HemisphereLight(0x6f5a8a, 0x2a1830, 0.6);
 scene.add(hemi);
 
 /* ----- Background: full starry night sky (equirectangular gradient + nebula glow) -----
-   Baked once at load, before any benchmark can run, so this stays a fixed high-detail
-   asset rather than part of the adaptive step-down (which only covers pixel ratio,
-   star count, and target FPS — see ADAPTIVE QUALITY above). ----- */
+   Phase 14: baked offline by scripts/build-backgrounds.js (see that file for the
+   original procedural drawing routine this replaced) into a few PNG variants under
+   public/assets/backgrounds/, loaded here instead of running the same canvas-drawing
+   work in every browser on every page load. One is picked at random per session for
+   some variety; the smaller dynamic star/fairy-light layers on top (below) still keep
+   the sky feeling alive. ----- */
+const BG_VARIANTS = ['nebula-1', 'nebula-2', 'nebula-3'];
+const bgVariant = BG_VARIANTS[Math.floor(Math.random() * BG_VARIANTS.length)];
+
 const bgGeo = new THREE.SphereGeometry(60, 64, 64);
-const bgCanvas = document.createElement('canvas');
-const BG_W = 4096, BG_H = 2048;
-bgCanvas.width = BG_W; bgCanvas.height = BG_H;
-const bgCtx = bgCanvas.getContext('2d');
-
-// base: near-black night sky, with the faintest gradient so it's not flat
-const grad = bgCtx.createLinearGradient(0, 0, 0, BG_H);
-grad.addColorStop(0, '#000000');
-grad.addColorStop(0.5, '#03030a');
-grad.addColorStop(1, '#000000');
-bgCtx.fillStyle = grad;
-bgCtx.fillRect(0, 0, BG_W, BG_H);
-
-// soft, subtle nebula glow patches
-function paintGlow(x, y, r, color, alpha) {
-  const g = bgCtx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, color.replace('ALPHA', alpha));
-  g.addColorStop(1, color.replace('ALPHA', '0'));
-  bgCtx.fillStyle = g;
-  bgCtx.fillRect(x - r, y - r, r * 2, r * 2);
-}
-paintGlow(3040, 600, 1040, 'rgba(80,60,120,ALPHA)', '0.12');
-paintGlow(800, 920, 880, 'rgba(110,70,90,ALPHA)', '0.08');
-paintGlow(2080, 1520, 960, 'rgba(60,50,100,ALPHA)', '0.09');
-paintGlow(3800, 1600, 800, 'rgba(40,60,90,ALPHA)', '0.07');
-
-// dense background stars baked into the texture (varied size + brightness)
-const bakedStarCount = 5600;
-for (let i = 0; i < bakedStarCount; i++) {
-  const x = Math.random() * BG_W;
-  const y = Math.random() * BG_H;
-  const size = Math.random() < 0.85 ? Math.random() * 3 + 0.8 : Math.random() * 5 + 3;
-  const alpha = Math.random() * 0.6 + 0.3;
-  bgCtx.fillStyle = `rgba(255, 245, 225, ${alpha})`;
-  bgCtx.beginPath();
-  bgCtx.arc(x, y, size, 0, Math.PI * 2);
-  bgCtx.fill();
-}
-
-// a few brighter "named" stars with subtle glow
-for (let i = 0; i < 24; i++) {
-  const x = Math.random() * BG_W;
-  const y = Math.random() * 1520 + 40;
-  const g = bgCtx.createRadialGradient(x, y, 0, x, y, 24);
-  g.addColorStop(0, 'rgba(255, 250, 235, 0.9)');
-  g.addColorStop(1, 'rgba(255, 250, 235, 0)');
-  bgCtx.fillStyle = g;
-  bgCtx.fillRect(x - 24, y - 24, 48, 48);
-  bgCtx.fillStyle = 'rgba(255, 255, 245, 0.95)';
-  bgCtx.beginPath();
-  bgCtx.arc(x, y, 5.6, 0, Math.PI * 2);
-  bgCtx.fill();
-}
-
-const bgTex = new THREE.CanvasTexture(bgCanvas);
+const bgTex = new THREE.TextureLoader().load(`assets/backgrounds/${bgVariant}.png`);
 bgTex.colorSpace = THREE.SRGBColorSpace;
 bgTex.minFilter = THREE.LinearMipmapLinearFilter;
 bgTex.magFilter = THREE.LinearFilter;
