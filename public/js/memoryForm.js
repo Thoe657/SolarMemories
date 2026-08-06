@@ -13,6 +13,7 @@ const saveMemBtn = document.getElementById('saveMemBtn');
 const typeRow = document.getElementById('typeRow');
 const memTitle = document.getElementById('memTitle');
 const memDate = document.getElementById('memDate');
+const memMilestone = document.getElementById('memMilestone');
 const memText = document.getElementById('memText');
 const textLabel = document.getElementById('textLabel');
 const textField = document.getElementById('textField');
@@ -229,6 +230,7 @@ function resetForm() {
   memTitle.value = '';
   memText.value = '';
   memDate.value = '';
+  memMilestone.checked = false;
   pendingPhotoDataUrl = null;
   pendingPhotoImg = null;
   pendingAudioDataUrl = null;
@@ -258,7 +260,8 @@ saveMemBtn.addEventListener('click', async () => {
     text: memText.value.trim(),
     photoData: pendingPhotoDataUrl,
     photoImg: pendingPhotoImg,
-    audioData: pendingAudioDataUrl
+    audioData: pendingAudioDataUrl,
+    milestone: memMilestone.checked
   };
   memories.push(memory);
   addMemoryToScene(memory);

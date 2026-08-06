@@ -916,3 +916,36 @@
     border-color: rgba(239, 159, 39, 0.5);
     color: #ffd9a0;
   }
+
+  /* ---------- Milestone toggle (add-memory form) ---------- */
+  .milestone-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--card-text);
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .milestone-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-deep);
+    cursor: pointer;
+  }
+
+  /* ---------- Milestone badge (read view) ---------- */
+  .milestone-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #a9791a;
+    background: rgba(255, 217, 160, 0.35);
+    border: 1px solid rgba(169, 121, 26, 0.35);
+    border-radius: 999px;
+    padding: 2px 10px;
+    margin: 0 0 6px;
+  }
