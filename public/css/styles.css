@@ -1,0 +1,767 @@
+  @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Quicksand:wght@400;500;600&display=swap');
+
+  :root {
+    --bg-top: #000000;
+    --bg-bottom: #050507;
+    --light-warm: #ffd9a0;
+    --light-glow: #ffeec2;
+    --card-bg: #fffaf0;
+    --card-text: #4a3b2a;
+    --accent: #f2a6b0;
+    --accent-deep: #d6798a;
+    --ui-bg: rgba(30, 18, 45, 0.55);
+    --ui-border: rgba(255, 217, 160, 0.25);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Quicksand', sans-serif;
+    background: linear-gradient(to bottom, var(--bg-top), var(--bg-bottom));
+  }
+
+  #scene-container {
+    position: absolute;
+    inset: 0;
+  }
+
+  #scene-container canvas {
+    display: block;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .title {
+    font-family: 'Caveat', cursive;
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--light-glow);
+    text-shadow: 0 0 18px rgba(255, 217, 160, 0.35);
+    letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: rgba(255, 240, 220, 0.55);
+    margin-top: 2px;
+    font-weight: 400;
+  }
+
+  .storage-status {
+    font-size: 12px;
+    color: rgba(255, 240, 220, 0.4);
+    margin-top: 4px;
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .storage-status .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #b3a18c;
+    flex-shrink: 0;
+  }
+
+  .storage-status .dot.connected { background: #97c459; }
+  .storage-status .dot.local { background: #ef9f27; }
+
+  /* ---------- Add button ---------- */
+  .add-btn {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--ui-bg);
+    border: 1px solid var(--ui-border);
+    color: var(--light-glow);
+    font-family: 'Quicksand', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+    box-shadow: 0 0 0 0 rgba(255, 217, 160, 0);
+  }
+
+  .add-btn:hover {
+    background: rgba(255, 217, 160, 0.18);
+    box-shadow: 0 0 24px rgba(255, 217, 160, 0.25);
+    transform: translateY(-1px);
+  }
+
+  .add-btn:active {
+    transform: translateY(0px) scale(0.98);
+  }
+
+  .add-btn svg { flex-shrink: 0; }
+
+  /* ---------- Modal overlay (shared) ---------- */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 8, 24, 0.55);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ---------- Add memory form ---------- */
+  .panel {
+    background: var(--card-bg);
+    color: var(--card-text);
+    border-radius: 18px;
+    width: min(420px, 90vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    padding: 26px 26px 22px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.35);
+    transform: translateY(16px) scale(0.97);
+    transition: transform 0.25s ease;
+  }
+
+  .overlay.visible .panel {
+    transform: translateY(0) scale(1);
+  }
+
+  .panel h2 {
+    font-family: 'Caveat', cursive;
+    font-size: 30px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: var(--accent-deep);
+  }
+
+  .panel .sub {
+    font-size: 13px;
+    color: #8a7a68;
+    margin: 0 0 18px;
+  }
+
+  .field-group {
+    margin-bottom: 16px;
+  }
+
+  .field-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #8a7a68;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+  }
+
+  /* Type selector pills */
+  .type-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .type-pill {
+    flex: 1 1 auto;
+    text-align: center;
+    padding: 9px 8px;
+    border-radius: 10px;
+    border: 1.5px solid #ecdfce;
+    background: #fdf8ef;
+    font-size: 13px;
+    font-weight: 600;
+    color: #b3a18c;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .type-pill.active {
+    border-color: var(--accent-deep);
+    background: var(--accent);
+    color: #6e2530;
+  }
+
+  input[type="text"], input[type="date"], textarea {
+    width: 100%;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1.5px solid #ecdfce;
+    background: #fffdfa;
+    color: var(--card-text);
+    resize: vertical;
+  }
+
+  input[type="text"]:focus, input[type="date"]:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent-deep);
+  }
+
+  textarea { min-height: 90px; line-height: 1.5; }
+
+  .file-drop {
+    border: 1.5px dashed #ecdfce;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: #b3a18c;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .file-drop:hover {
+    border-color: var(--accent-deep);
+    background: #fdf6ec;
+  }
+
+  .file-drop.has-file {
+    border-color: var(--accent-deep);
+    color: var(--card-text);
+    font-weight: 600;
+  }
+
+  .preview-img {
+    max-width: 100%;
+    max-height: 140px;
+    border-radius: 8px;
+    margin-top: 8px;
+    display: block;
+  }
+
+  audio.preview-audio {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .panel-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 22px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 11px 16px;
+    border-radius: 10px;
+    border: none;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.15s;
+  }
+
+  .btn:active { transform: scale(0.98); }
+
+  .btn-primary {
+    background: var(--accent-deep);
+    color: #fff8f4;
+  }
+
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:disabled {
+    background: #e8d6d3;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: #f3ece1;
+    color: #8a7a68;
+  }
+
+  .btn-secondary:hover { filter: brightness(0.97); }
+
+  /* ---------- Reading view ---------- */
+  .read-card {
+    background: var(--card-bg);
+    color: var(--card-text);
+    border-radius: 14px;
+    width: min(440px, 90vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    scrollbar-width: none;        /* Firefox */
+    -ms-overflow-style: none;     /* IE/Edge */  
+    padding: 0;
+    box-shadow: 0 30px 70px rgba(0,0,0,0.4);
+    transform: translateY(16px) scale(0.96);
+    transition: transform 0.25s ease;
+  }
+
+  .read-card::-webkit-scrollbar {
+    display: none;
+  }
+
+  .overlay.visible .read-card { transform: translateY(0) scale(1); }
+
+  .read-img-wrap {
+    width: 100%;
+    height: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #111;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .read-img-wrap img {
+    max-width: 100%;
+    max-height: 60vh;
+
+    width: auto;
+    height: auto;
+
+    object-fit: contain;
+  }
+  .read-body {
+    padding: 22px 24px 24px;
+  }
+
+  .read-date {
+    font-size: 12px;
+    color: #b3a18c;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin: 0 0 6px;
+  }
+
+  .read-title {
+    font-family: 'Caveat', cursive;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent-deep);
+    margin: 0 0 10px;
+  }
+
+  .read-text {
+    font-size: 15px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+
+  .read-text.letter {
+    font-family: 'Caveat', cursive;
+    font-size: 19px;
+    line-height: 1.6;
+  }
+
+  .read-audio {
+    width: 100%;
+    margin-top: 14px;
+  }
+
+  .read-close {
+    display: block;
+    margin: 18px auto 0;
+    background: #f3ece1;
+    color: #8a7a68;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 24px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .read-close:hover { filter: brightness(0.97); }
+
+  /* ---------- Empty state hint ---------- */
+  .empty-hint {
+    position: absolute;
+    bottom: 28px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: rgba(255, 240, 220, 0.6);
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 5;
+    transition: opacity 0.4s;
+  }
+
+  .empty-hint.hidden { opacity: 0; }
+
+  /* ---------- Galaxy picker: solar system ---------- */
+  #galaxyPicker {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000000;
+    transition: opacity 0.5s ease;
+    overflow: hidden;
+  }
+
+  #galaxyPicker.fading {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #galaxyPicker.hidden {
+    display: none;
+  }
+
+  #galaxyPicker .start-stars {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  #galaxyPicker .start-stars span {
+    position: absolute;
+    display: block;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: rgba(255, 245, 225, 0.8);
+    animation: twinkle 3s ease-in-out infinite;
+  }
+
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 0.9; }
+  }
+
+  .solar-system {
+    position: relative;
+    width: min(92vmin, 920px);
+    height: min(92vmin, 920px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ----- Sun ----- */
+  .sun {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 13%;
+    height: 13%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff6dc, #ffd9a0 55%, #f2a64f 100%);
+    box-shadow:
+      0 0 40px 12px rgba(255, 217, 160, 0.55),
+      0 0 90px 40px rgba(255, 200, 130, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    animation: sun-pulse 6s ease-in-out infinite;
+  }
+
+  @keyframes sun-pulse {
+    0%, 100% { box-shadow: 0 0 40px 12px rgba(255, 217, 160, 0.55), 0 0 90px 40px rgba(255, 200, 130, 0.25); }
+    50% { box-shadow: 0 0 52px 18px rgba(255, 217, 160, 0.7), 0 0 110px 50px rgba(255, 200, 130, 0.32); }
+  }
+
+  .sun-label {
+    font-family: 'Caveat', cursive;
+    font-weight: 700;
+    font-size: clamp(16px, 2.4vmin, 26px);
+    color: #5c3a12;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  /* ----- Orbits & planets ----- */
+  .orbits {
+    position: absolute;
+    inset: 0;
+  }
+
+  .orbit-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    border: 1px dashed rgba(255, 240, 220, 0.12);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  /* Layer 1: rotates around the center of .orbits. Zero-size so its
+     rotation pivot (its own 0,0 point, default transform-origin) sits
+     exactly at the solar system's center. */
+  .orbit-spin {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    animation: orbit-rotate linear infinite;
+  }
+
+  @keyframes orbit-rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Layer 2: static radius offset along the (rotating) x-axis of its
+     parent. This is what actually traces the circular path. */
+  .orbit-offset {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  /* Layer 3: counter-rotates at the same speed/direction as layer 1,
+     cancelling its parent's rotation so the planet + label stay upright
+     while still following the circular path traced by layer 2. */
+  .planet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    pointer-events: auto;
+    animation: orbit-counter linear infinite;
+  }
+
+  @keyframes orbit-counter {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to { transform: translate(-50%, -50%) rotate(-360deg); }
+  }
+
+  .planet:hover .planet-body {
+    transform: scale(1.15);
+  }
+
+  .planet-body {
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+
+  .planet-label {
+    position: absolute;
+    top: calc(100% + 18px);
+    left: 50%;
+    transform: translateX(-50%);
+
+    font-family: 'Caveat', cursive;
+    font-weight: 700;
+    font-size: clamp(13px, 1.7vmin, 19px);
+    color: var(--light-glow);
+    text-shadow: 0 0 12px rgba(0,0,0,0.6);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* "new galaxy" planet: dim, dashed outline, plus icon */
+  .planet.new-galaxy-planet .planet-body {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px dashed rgba(255, 240, 220, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 240, 220, 0.5);
+  }
+
+  .planet.new-galaxy-planet:hover .planet-body {
+    border-color: var(--light-glow);
+    color: var(--light-glow);
+  }
+
+  .planet.new-galaxy-planet .planet-label {
+    color: rgba(255, 240, 220, 0.45);
+  }
+
+  .new-galaxy-form {
+    position: fixed;
+    z-index: 1010;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--card-bg);
+    color: var(--card-text);
+    border-radius: 16px;
+    padding: 22px;
+    width: min(340px, 90vw);
+    box-shadow: 0 24px 50px rgba(0,0,0,0.4);
+  }
+
+  .new-galaxy-form.hidden {
+    display: none;
+  }
+
+  .form-title {
+    font-family: 'Caveat', cursive;
+    font-size: 26px;
+    font-weight: 700;
+    margin: 0 0 14px;
+    color: var(--accent-deep);
+  }
+
+  .new-galaxy-form input[type="text"] {
+    width: 100%;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1.5px solid #ecdfce;
+    background: #fffdfa;
+    color: var(--card-text);
+    margin-bottom: 14px;
+  }
+
+  .new-galaxy-form input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent-deep);
+  }
+
+  .form-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #8a7a68;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+
+  .color-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .color-row .color-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+
+  .color-row .color-dot.active {
+    border-color: var(--card-text);
+    transform: scale(1.1);
+  }
+
+  .ring-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .ring-row .ring-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8a7a68;
+    border: 1.5px solid #ecdfce;
+    background: #fdf8ef;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .ring-row .ring-dot.active {
+    border-color: var(--accent-deep);
+    background: var(--accent);
+    color: #6e2530;
+  }
+
+  .form-hint {
+    font-size: 12px;
+    color: #b3a18c;
+    margin: 0 0 16px;
+  }
+
+  /* ---------- Hyperspace transition ---------- */
+  #hyperspaceCanvas {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    pointer-events: none;
+    opacity: 0;
+    background: #000000;
+  }
+
+  #hyperspaceCanvas.active {
+    opacity: 1;
+  }
+
+  /* ---------- Memory delete control ---------- */
+  .read-delete {
+    display: block;
+    margin: 10px auto 0;
+    background: transparent;
+    color: var(--accent-deep);
+    border: none;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 10px;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+
+  .read-delete:hover { opacity: 1; }
+
+  .confirm-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    justify-content: center;
+  }
+
+  .confirm-row .btn {
+    flex: 0 1 auto;
+    padding: 8px 18px;
+    font-size: 13px;
+  }
+
+  @media (max-width: 600px) {
+    .title { font-size: 24px; }
+    .add-btn span.label { display: none; }
+    .add-btn { padding: 10px; }
+  }
