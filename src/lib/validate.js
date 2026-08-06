@@ -34,7 +34,7 @@ function validateGalaxy(body) {
 
 function validateMemory(body) {
   const errors = [];
-  const { id, galaxyId, type, title, date, text, photoData, audioData, milestone } = body || {};
+  const { id, galaxyId, type, title, date, text, photoData, audioData, milestone, relatedIds } = body || {};
 
   if (!id || !ALLOWED_TYPES.includes(type)) {
     errors.push('invalid memory: id and a valid type are required');
@@ -69,6 +69,9 @@ function validateMemory(body) {
     photoData: photoData || null,
     audioData: audioData || null,
     milestone: !!milestone,
+    relatedIds: Array.isArray(relatedIds)
+      ? relatedIds.filter((x) => typeof x === 'string' && x.trim().length > 0).map(String)
+      : [],
     deletedAt: null,
     createdAt: new Date().toISOString(),
   };

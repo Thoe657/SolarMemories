@@ -60,7 +60,8 @@ export async function persistMemory(memory, galaxyId) {
     text: memory.text,
     photoData: memory.photoData || null,
     audioData: memory.audioData || null,
-    milestone: !!memory.milestone
+    milestone: !!memory.milestone,
+    relatedIds: Array.isArray(memory.relatedIds) ? memory.relatedIds.map(String) : []
   };
   const resp = await fetch(MEMORIES_URL, {
     method: 'POST',
@@ -88,7 +89,8 @@ export async function loadAllMemories(galaxyId) {
     photoData: entry.photoData || null,
     photoImg: null,
     audioData: entry.audioData || null,
-    milestone: !!entry.milestone
+    milestone: !!entry.milestone,
+    relatedIds: Array.isArray(entry.relatedIds) ? entry.relatedIds.map(String) : []
   }));
 }
 
