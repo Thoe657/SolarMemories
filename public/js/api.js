@@ -99,3 +99,32 @@ export async function deleteMemory(id) {
     throw new Error(body.error || `delete failed (${resp.status})`);
   }
 }
+
+export async function loadTrashedMemories(galaxyId) {
+  const resp = await fetch(`${MEMORIES_URL}/trash?galaxy=${encodeURIComponent(galaxyId)}`);
+  if (!resp.ok) {
+    throw new Error(`load failed (${resp.status})`);
+  }
+  const body = await resp.json();
+  return body.memories || [];
+}
+
+export async function restoreMemory(id) {
+  const resp = await fetch(`${MEMORIES_URL}/${encodeURIComponent(id)}/restore`, {
+    method: 'POST'
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.error || `restore failed (${resp.status})`);
+  }
+}
+
+export async function deleteMemoryForever(id) {
+  const resp = await fetch(`${MEMORIES_URL}/${encodeURIComponent(id)}/forever`, {
+    method: 'DELETE'
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.error || `delete failed (${resp.status})`);
+  }
+}

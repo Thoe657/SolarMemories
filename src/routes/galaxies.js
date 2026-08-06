@@ -1,14 +1,7 @@
 const express = require('express');
 const { GALAXIES_DIR, MEMORIES_DIR, INDEX_FILE } = require('../config');
-const {
-  readJSON,
-  writeJSON,
-  withWriteLock,
-  readRecord,
-  writeRecord,
-  deleteRecord,
-  readAllRecords,
-} = require('../lib/storage');
+const { readJSON, writeJSON, withWriteLock, readRecord, writeRecord, readAllRecords } = require('../lib/storage');
+const { archiveRecord } = require('../lib/archive');
 const { validateGalaxy } = require('../lib/validate');
 
 const router = express.Router();
@@ -48,19 +41,20 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Soft delete: archives the galaxy and cascades to archive its (non-deleted)
+// memories too, instead of removing any files.
 router.delete('/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
 
     await withWriteLock(() => {
-      deleteRecord(GALAXIES_DIR, id);
+      archiveRecord(GALAXIES_DIR, id);
 
-      // cascade: drop this galaxy's memories too
       const index = readJSON(INDEX_FILE);
       const remaining = [];
       index.forEach((entry) => {
         if (entry.galaxyId === id) {
-          deleteRecord(MEMORIES_DIR, entry.id);
+          archiveRecord(MEMORIES_DIR, entry.id);
         } else {
           remaining.push(entry);
         }

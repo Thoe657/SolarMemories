@@ -2,7 +2,7 @@
    GALAXY PICKER — solar system rendering, orbit math, new-galaxy
    form, hyperspace transition, edit-galaxy panel
 ============================================================ */
-import { createGalaxyRemote, deleteGalaxyRemote } from './api.js';
+import { createGalaxyRemote, deleteGalaxyRemote, loadTrashedMemories, restoreMemory, deleteMemoryForever } from './api.js';
 import { showStorageWarning } from './util.js';
 import { clearGalleryScene, loadGalaxyMemories } from './scene.js';
 import { currentGalaxy, galaxiesCache, setCurrentGalaxy, setGalaxiesCache } from './state.js';
@@ -351,9 +351,75 @@ const deleteGalaxyBtn = document.getElementById('deleteGalaxyBtn');
 const deleteGalaxyConfirmRow = document.getElementById('deleteGalaxyConfirmRow');
 const cancelDeleteGalaxyBtn = document.getElementById('cancelDeleteGalaxyBtn');
 const confirmDeleteGalaxyBtn = document.getElementById('confirmDeleteGalaxyBtn');
+const trashList = document.getElementById('trashList');
 
 let editSelectedColor = '#ffd9a0';
 let editSelectedRing = 1;
+
+// Loads and renders the currently-open galaxy's trashed memories, with
+// "restore" / "delete forever" actions on each.
+async function renderTrash() {
+  if (!currentGalaxy) return;
+  trashList.innerHTML = '<div class="trash-empty">loading…</div>';
+  try {
+    const trashed = await loadTrashedMemories(currentGalaxy.id);
+    if (trashed.length === 0) {
+      trashList.innerHTML = '<div class="trash-empty">nothing in the trash</div>';
+      return;
+    }
+    trashList.innerHTML = '';
+    trashed.forEach((m) => {
+      const row = document.createElement('div');
+      row.className = 'trash-item';
+
+      const title = document.createElement('span');
+      title.className = 'trash-item-title';
+      title.textContent = m.title || 'untitled memory';
+
+      const actions = document.createElement('div');
+      actions.className = 'trash-item-actions';
+
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'trash-restore-btn';
+      restoreBtn.textContent = 'restore';
+      restoreBtn.addEventListener('click', async () => {
+        restoreBtn.disabled = true;
+        try {
+          await restoreMemory(m.id);
+          await renderTrash();
+        } catch (e) {
+          console.warn('Could not restore memory', e);
+          showStorageWarning('couldn\'t restore that memory — check the gallery server and try again.');
+          restoreBtn.disabled = false;
+        }
+      });
+
+      const foreverBtn = document.createElement('button');
+      foreverBtn.className = 'trash-forever-btn';
+      foreverBtn.textContent = 'delete forever';
+      foreverBtn.addEventListener('click', async () => {
+        foreverBtn.disabled = true;
+        try {
+          await deleteMemoryForever(m.id);
+          await renderTrash();
+        } catch (e) {
+          console.warn('Could not permanently delete memory', e);
+          showStorageWarning('couldn\'t delete that memory — check the gallery server and try again.');
+          foreverBtn.disabled = false;
+        }
+      });
+
+      actions.appendChild(restoreBtn);
+      actions.appendChild(foreverBtn);
+      row.appendChild(title);
+      row.appendChild(actions);
+      trashList.appendChild(row);
+    });
+  } catch (e) {
+    console.warn('Could not load trash', e);
+    trashList.innerHTML = '<div class="trash-empty">couldn\'t load trash</div>';
+  }
+}
 
 editGalaxyBtn.addEventListener('click', () => {
   if (!currentGalaxy) return;
@@ -368,6 +434,7 @@ editGalaxyBtn.addEventListener('click', () => {
   confirmDeleteGalaxyBtn.disabled = false;
   cancelDeleteGalaxyBtn.disabled = false;
   editGalaxyOverlay.classList.add('visible');
+  renderTrash();
 });
 
 editColorRow.addEventListener('click', (e) => {
