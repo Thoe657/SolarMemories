@@ -6,7 +6,7 @@ import { makePolaroidTexture, roundRect } from './cards.js';
 import { loadAllMemories } from './api.js';
 import { showStorageWarning } from './util.js';
 import { memories } from './state.js';
-import { shouldDampenMotion } from './audioManager.js';
+import { shouldDampenMotion, prefersReducedMotion } from './audioManager.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -14,11 +14,21 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 1.2, 9);
 
-// Detect low-end devices: cap pixel ratio at 1 and skip antialias to save GPU fill-rate
-const isLowEnd = navigator.hardwareConcurrency <= 4 || /Android|iPhone|iPad/i.test(navigator.userAgent);
-const renderer = new THREE.WebGLRenderer({ antialias: !isLowEnd, alpha: true });
+/* ============================================================
+   ADAPTIVE QUALITY — starts at full quality and, once the animate
+   loop is running, measures the first ~60 frames' average frame time
+   to decide whether this device can sustain it. If not, pixel ratio,
+   the distant star count, and the target FPS step down at runtime
+   (see applyLowQuality() near the animate loop below).
+   OS-level prefers-reduced-motion is a stated accessibility
+   preference, not a capability signal — it short-circuits straight
+   to the low-quality path immediately, skipping the benchmark.
+============================================================ */
+let lowQuality = prefersReducedMotion();
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(isLowEnd ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowQuality ? 1 : 2));
 container.appendChild(renderer.domElement);
 
 // Soft ambient + warm point lights to sell the "fairy light" mood
@@ -27,10 +37,13 @@ scene.add(new THREE.AmbientLight(0x554466, 1.1));
 const hemi = new THREE.HemisphereLight(0x6f5a8a, 0x2a1830, 0.6);
 scene.add(hemi);
 
-/* ----- Background: full starry night sky (equirectangular gradient + nebula glow) ----- */
-const bgGeo = new THREE.SphereGeometry(60, isLowEnd ? 32 : 64, isLowEnd ? 32 : 64);
+/* ----- Background: full starry night sky (equirectangular gradient + nebula glow) -----
+   Baked once at load, before any benchmark can run, so this stays a fixed high-detail
+   asset rather than part of the adaptive step-down (which only covers pixel ratio,
+   star count, and target FPS — see ADAPTIVE QUALITY above). ----- */
+const bgGeo = new THREE.SphereGeometry(60, 64, 64);
 const bgCanvas = document.createElement('canvas');
-const BG_W = isLowEnd ? 2048 : 4096, BG_H = isLowEnd ? 1024 : 2048;
+const BG_W = 4096, BG_H = 2048;
 bgCanvas.width = BG_W; bgCanvas.height = BG_H;
 const bgCtx = bgCanvas.getContext('2d');
 
@@ -56,7 +69,7 @@ paintGlow(2080, 1520, 960, 'rgba(60,50,100,ALPHA)', '0.09');
 paintGlow(3800, 1600, 800, 'rgba(40,60,90,ALPHA)', '0.07');
 
 // dense background stars baked into the texture (varied size + brightness)
-const bakedStarCount = isLowEnd ? 2500 : 5600;
+const bakedStarCount = 5600;
 for (let i = 0; i < bakedStarCount; i++) {
   const x = Math.random() * BG_W;
   const y = Math.random() * BG_H;
@@ -87,31 +100,38 @@ const bgTex = new THREE.CanvasTexture(bgCanvas);
 bgTex.colorSpace = THREE.SRGBColorSpace;
 bgTex.minFilter = THREE.LinearMipmapLinearFilter;
 bgTex.magFilter = THREE.LinearFilter;
-bgTex.anisotropy = isLowEnd ? 1 : 4;
+bgTex.anisotropy = 4;
 bgTex.wrapS = THREE.RepeatWrapping;
 bgTex.mapping = THREE.EquirectangularReflectionMapping;
 const bgMat = new THREE.MeshBasicMaterial({ map: bgTex, side: THREE.BackSide, fog: false });
 const bgMesh = new THREE.Mesh(bgGeo, bgMat);
 scene.add(bgMesh);
 
-/* ----- Distant twinkling stars (full sphere, including poles) ----- */
-const starGeo = new THREE.BufferGeometry();
-const starCount = isLowEnd ? 400 : 900;
-const starPos = new Float32Array(starCount * 3);
-for (let i = 0; i < starCount; i++) {
-  const r = 24 + Math.random() * 20;
-  // uniform distribution over full sphere
-  const u = Math.random();
-  const v = Math.random();
-  const theta = u * Math.PI * 2;
-  const phi = Math.acos(2 * v - 1); // full 0..PI, covers poles too
-  starPos[i*3]     = r * Math.sin(phi) * Math.cos(theta);
-  starPos[i*3 + 1] = r * Math.cos(phi);
-  starPos[i*3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+/* ----- Distant twinkling stars (full sphere, including poles) -----
+   Rebuildable at a lower count by applyLowQuality() below, since unlike
+   the baked background this is cheap to tear down and recreate. ----- */
+function createStars(count) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r = 24 + Math.random() * 20;
+    // uniform distribution over full sphere
+    const u = Math.random();
+    const v = Math.random();
+    const theta = u * Math.PI * 2;
+    const phi = Math.acos(2 * v - 1); // full 0..PI, covers poles too
+    pos[i*3]     = r * Math.sin(phi) * Math.cos(theta);
+    pos[i*3 + 1] = r * Math.cos(phi);
+    pos[i*3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xffeec2, size: 0.06, transparent: true, opacity: 0.6 });
+  return new THREE.Points(geo, mat);
 }
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const starMat = new THREE.PointsMaterial({ color: 0xffeec2, size: 0.06, transparent: true, opacity: 0.6 });
-const stars = new THREE.Points(starGeo, starMat);
+
+const STAR_COUNT_HIGH = 900;
+const STAR_COUNT_LOW = 400;
+let stars = createStars(lowQuality ? STAR_COUNT_LOW : STAR_COUNT_HIGH);
 scene.add(stars);
 
 /* ----- Floating ambient lights ----- */
@@ -119,7 +139,7 @@ const fairyGroup = new THREE.Group();
 scene.add(fairyGroup);
 
 function createFloatingLights(count, color, radiusMin, radiusMax) {
-  const segments = isLowEnd ? 5 : 8;
+  const segments = lowQuality ? 5 : 8;
   const bulbGeo = new THREE.SphereGeometry(0.045, segments, segments);
   const glowGeo = new THREE.SphereGeometry(0.12, segments, segments);
 
@@ -155,9 +175,9 @@ function createFloatingLights(count, color, radiusMin, radiusMax) {
 }
 
 // scattered warm lights, closer in and further out, drifting gently
-createFloatingLights(isLowEnd ? 20 : 50, 0xffd9a0, 3, 7);
-createFloatingLights(isLowEnd ? 15 : 40, 0xffe8c0, 6, 11);
-createFloatingLights(isLowEnd ? 10 : 30, 0xffcf9a, 4, 9);
+createFloatingLights(lowQuality ? 20 : 50, 0xffd9a0, 3, 7);
+createFloatingLights(lowQuality ? 15 : 40, 0xffe8c0, 6, 11);
+createFloatingLights(lowQuality ? 10 : 30, 0xffcf9a, 4, 9);
 
 /* ============================================================
    MEMORY CARD CREATION (polaroid sprites)
@@ -487,10 +507,38 @@ export function getMeshScreenRect(mesh) {
    ANIMATION LOOP
 ============================================================ */
 const clock = new THREE.Clock();
-const TARGET_FPS = isLowEnd ? 30 : 60;
-const FRAME_INTERVAL = 1000 / TARGET_FPS;
+let TARGET_FPS = lowQuality ? 30 : 60;
+let FRAME_INTERVAL = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
 let animPaused = false;
+
+// Steps pixel ratio, star count, and target FPS down to their low-quality
+// values. Called either immediately (prefers-reduced-motion at load) or
+// once the frame-time benchmark below decides the device can't keep up.
+function applyLowQuality() {
+  if (lowQuality) return; // already applied
+  lowQuality = true;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+  TARGET_FPS = 30;
+  FRAME_INTERVAL = 1000 / TARGET_FPS;
+
+  const oldStars = stars;
+  stars = createStars(STAR_COUNT_LOW);
+  scene.add(stars);
+  scene.remove(oldStars);
+  oldStars.geometry.dispose();
+  oldStars.material.dispose();
+}
+
+// Runtime capability benchmark: average frame time over the first ~60
+// rendered frames. Skipped entirely if lowQuality was already forced on
+// by prefers-reduced-motion — that's a stated preference, not something
+// a fast benchmark result should override.
+const BENCHMARK_FRAME_COUNT = 60;
+const BENCHMARK_MS_THRESHOLD = 22; // ~45fps
+let benchmarkDone = lowQuality;
+let benchmarkFrames = 0;
+let benchmarkTotal = 0;
 
 // Pause rendering when tab is hidden to save CPU/GPU
 document.addEventListener('visibilitychange', () => {
@@ -504,7 +552,20 @@ function animate(now = 0) {
 
   // Throttle to TARGET_FPS
   if (now - lastFrameTime < FRAME_INTERVAL) return;
+  const frameDelta = lastFrameTime ? now - lastFrameTime : 0;
   lastFrameTime = now;
+
+  // Ignore a stray huge gap (e.g. right after a visibilitychange resume)
+  // so it doesn't skew the average toward a false downgrade.
+  if (!benchmarkDone && frameDelta > 0 && frameDelta < 200) {
+    benchmarkFrames++;
+    benchmarkTotal += frameDelta;
+    if (benchmarkFrames >= BENCHMARK_FRAME_COUNT) {
+      benchmarkDone = true;
+      const avgFrameTime = benchmarkTotal / benchmarkFrames;
+      if (avgFrameTime > BENCHMARK_MS_THRESHOLD) applyLowQuality();
+    }
+  }
 
   const t = clock.getElapsedTime();
 
@@ -560,5 +621,5 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(isLowEnd ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowQuality ? 1 : 2));
 });
