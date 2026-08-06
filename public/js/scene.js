@@ -287,6 +287,13 @@ let targetYaw = 0, targetPitch = 0;
 let yaw = 0, pitch = 0;
 const PITCH_LIMIT = Math.PI / 2 - 0.02; // just shy of straight up/down to avoid gimbal flip artifacts
 
+// Lets cardFlip.js pause camera-look while a card is flipping/open.
+let dragLocked = false;
+export function setDragLocked(locked) {
+  dragLocked = locked;
+  if (locked) isDragging = false;
+}
+
 camera.position.set(0, 1.2, 0);
 
 function updateCameraFromAngles() {
@@ -304,6 +311,7 @@ updateCameraFromAngles();
 renderer.domElement.style.touchAction = 'none';
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (dragLocked) return;
   isDragging = true;
   prevX = e.clientX;
   prevY = e.clientY;
@@ -315,7 +323,7 @@ window.addEventListener('pointermove', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
-  if (!isDragging) return;
+  if (!isDragging || dragLocked) return;
   const dx = e.clientX - prevX;
   const dy = e.clientY - prevY;
   prevX = e.clientX;
@@ -325,8 +333,9 @@ window.addEventListener('pointermove', (e) => {
   targetPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, targetPitch));
 });
 
-// Callback invoked with the clicked memory when a card is clicked (only if
-// not dragged much). The caller (main.js) wires this up to the read view.
+// Callback invoked with (memory, mesh) when a card is clicked (only if not
+// dragged much). The caller (cardFlip.js) wires this up to the flip + read
+// panel.
 let onCardClick = null;
 export function setOnCardClick(fn) {
   onCardClick = fn;
@@ -338,6 +347,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   downPos = { x: e.clientX, y: e.clientY };
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
+  if (dragLocked) return; // a card is already flipping/open
   const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
   if (dist > 6) return; // was a drag
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -345,10 +355,35 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   raycaster.setFromCamera(pointer, camera);
   const intersects = raycaster.intersectObjects(cardGroup.children);
   if (intersects.length > 0) {
-    const mem = intersects[0].object.userData.memory;
-    if (onCardClick) onCardClick(mem);
+    const mesh = intersects[0].object;
+    if (onCardClick) onCardClick(mesh.userData.memory, mesh);
   }
 });
+
+// Projects a card mesh's four corners to screen-space pixel coordinates and
+// returns their bounding box, for positioning the flip read panel "over"
+// the card.
+export function getMeshScreenRect(mesh) {
+  const { width, height } = mesh.geometry.parameters;
+  const hw = width / 2, hh = height / 2;
+  const localCorners = [
+    new THREE.Vector3(-hw, -hh, 0),
+    new THREE.Vector3(hw, -hh, 0),
+    new THREE.Vector3(hw, hh, 0),
+    new THREE.Vector3(-hw, hh, 0),
+  ];
+  mesh.updateMatrixWorld();
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  localCorners.forEach((corner) => {
+    const world = corner.applyMatrix4(mesh.matrixWorld);
+    const ndc = world.project(camera);
+    const x = (ndc.x + 1) / 2 * window.innerWidth;
+    const y = (1 - (ndc.y + 1) / 2) * window.innerHeight;
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  });
+  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
+}
 
 /* ============================================================
    ANIMATION LOOP
@@ -379,8 +414,11 @@ function animate(now = 0) {
   pitch += (targetPitch - pitch) * 0.08;
   updateCameraFromAngles();
 
-  // gentle bob/sway for cards, rotation stays anchored to face the viewer
+  // gentle bob/sway for cards, rotation stays anchored to face the viewer.
+  // Skip any card cardFlip.js is currently animating/holding open, so the
+  // two animation systems don't fight over rotation.y each frame.
   cardGroup.children.forEach((mesh) => {
+    if (mesh.userData.flipping) return;
     const ud = mesh.userData;
     mesh.position.y = ud.basePos.y + Math.sin(t * ud.bobSpeed + ud.bobOffset) * 0.08;
     mesh.rotation.y = ud.baseRotY + Math.sin(t * ud.bobSpeed * 0.3 + ud.bobOffset) * 0.05;

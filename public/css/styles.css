@@ -326,6 +326,28 @@
 
   .overlay.visible .read-card { transform: translateY(0) scale(1); }
 
+  /* ---------- Card flip panel (Phase 7) ----------
+     Reuses .read-card for its visual chrome (background, radius,
+     shadow, scrolling), but positioned over the flipped card's
+     on-screen rect instead of centered in a full-screen overlay. */
+  .card-flip-panel {
+    position: fixed;
+    z-index: 1500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .card-flip-panel.read-card {
+    transform: none;
+    width: auto;
+  }
+
+  .card-flip-panel.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .read-img-wrap {
     width: 100%;
     height: auto;
