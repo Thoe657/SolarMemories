@@ -121,3 +121,44 @@ export function formatDate(dateStr) {
   if (isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
+
+// The reverse side of a card, shown mid-flip: just title + date, no photo.
+export function makeCardBackTexture(memory) {
+  const W = 512, H = 600;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#fffaf0';
+  roundRect(ctx, 0, 0, W, H, 14);
+  ctx.fill();
+
+  if (memory.milestone) {
+    ctx.strokeStyle = '#c99a2e';
+    ctx.lineWidth = 8;
+    roundRect(ctx, 4, 4, W-8, H-8, 14);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+    ctx.lineWidth = 2;
+    roundRect(ctx, 1, 1, W-2, H-2, 14);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#4a3b2a';
+  ctx.font = '600 42px "Comic Sans MS", "Caveat", cursive, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  wrapText(ctx, memory.title || 'untitled memory', W/2, H/2 - 6, W - 90, 50);
+
+  if (memory.date) {
+    ctx.fillStyle = '#8a7a68';
+    ctx.font = '500 26px "Comic Sans MS", "Caveat", cursive, sans-serif';
+    ctx.fillText(formatDate(memory.date), W/2, H/2 + 62);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
