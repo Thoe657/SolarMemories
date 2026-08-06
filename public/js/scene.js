@@ -2,7 +2,7 @@
    THREE.JS SETUP — renderer/camera/lights/background/animate loop
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
-import { makePolaroidTexture } from './cards.js';
+import { makePolaroidTexture, roundRect } from './cards.js';
 import { loadAllMemories } from './api.js';
 import { showStorageWarning } from './util.js';
 import { memories } from './state.js';
@@ -219,6 +219,60 @@ export function addMemoryToScene(memory) {
   document.getElementById('emptyHint').classList.add('hidden');
 }
 
+/* ============================================================
+   LOADING PLACEHOLDERS — shown at ring positions while a galaxy's
+   memories are being fetched, so entering a galaxy never shows a
+   flash of empty ring on a slow connection.
+============================================================ */
+const LOADING_PLACEHOLDER_COUNT = 4;
+let loadingPlaceholders = [];
+
+function makePlaceholderTexture() {
+  const W = 512, H = 600;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(210, 200, 190, 0.22)';
+  roundRect(ctx, 0, 0, W, H, 14);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function showLoadingPlaceholders() {
+  const aspect = 512 / 600;
+  const height = 1.8;
+  const width = height * aspect;
+  for (let i = 0; i < LOADING_PLACEHOLDER_COUNT; i++) {
+    const geo = new THREE.PlaneGeometry(width, height);
+    const mat = new THREE.MeshBasicMaterial({ map: makePlaceholderTexture(), transparent: true, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+
+    const { pos, angle } = getCardPosition(i);
+    mesh.position.copy(pos);
+    mesh.rotation.y = angle + Math.PI;
+    mesh.userData.basePos = pos.clone();
+    mesh.userData.baseRotY = mesh.rotation.y;
+    mesh.userData.baseRotZ = 0;
+    mesh.userData.bobOffset = Math.random() * Math.PI * 2;
+    mesh.userData.bobSpeed = 0.4 + Math.random() * 0.3;
+
+    cardGroup.add(mesh);
+    loadingPlaceholders.push(mesh);
+  }
+}
+
+export function clearLoadingPlaceholders() {
+  loadingPlaceholders.forEach((mesh) => {
+    mesh.material.map?.dispose();
+    mesh.material.dispose();
+    mesh.geometry.dispose();
+    cardGroup.remove(mesh);
+  });
+  loadingPlaceholders = [];
+}
+
 function refreshMemoryTexture(memory) {
   if (!memory.mesh) return;
   const newTex = makePolaroidTexture(memory);
@@ -259,6 +313,7 @@ export async function loadGalaxyMemories(galaxyId) {
     console.warn('Could not load memories', e);
     showStorageWarning('couldn\'t reach the gallery server — check that "npm start" is running, then reload.');
   }
+  clearLoadingPlaceholders();
   restored.forEach((mem) => {
     memories.push(mem);
     addMemoryToScene(mem);

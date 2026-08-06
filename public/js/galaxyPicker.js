@@ -4,7 +4,7 @@
 ============================================================ */
 import { createGalaxyRemote, deleteGalaxyRemote, loadTrashedMemories, restoreMemory, deleteMemoryForever } from './api.js';
 import { showStorageWarning } from './util.js';
-import { clearGalleryScene, loadGalaxyMemories } from './scene.js';
+import { clearGalleryScene, loadGalaxyMemories, showLoadingPlaceholders } from './scene.js';
 import { currentGalaxy, galaxiesCache, setCurrentGalaxy, setGalaxiesCache } from './state.js';
 
 /* ============================================================
@@ -315,6 +315,7 @@ async function selectGalaxy(galaxy) {
     galaxyPicker.classList.add('fading');
     topbar.style.display = '';
     clearGalleryScene();
+    showLoadingPlaceholders();
   });
 
   galaxyPicker.classList.add('hidden');
