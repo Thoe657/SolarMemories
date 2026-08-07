@@ -123,7 +123,7 @@
   /* ---------- Quiet-mode toggle (always visible once past the entry screen) ---------- */
   .quiet-toggle-btn {
     position: fixed;
-    top: 18px;
+    bottom: 18px;
     right: 18px;
     z-index: 50;
     width: 40px;
