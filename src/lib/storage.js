@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const { DATA_DIR, GALAXIES_DIR, MEMORIES_DIR, INDEX_FILE } = require('../config');
+const { DATA_DIR, GALAXIES_DIR, MEMORIES_DIR, PLANETS_DIR, INDEX_FILE } = require('../config');
 
 // --- tiny JSON "database" helpers ---
 
 function ensureDataFiles() {
-  [DATA_DIR, GALAXIES_DIR, MEMORIES_DIR].forEach((dir) => {
+  [DATA_DIR, GALAXIES_DIR, MEMORIES_DIR, PLANETS_DIR].forEach((dir) => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }

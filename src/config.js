@@ -15,7 +15,11 @@ const MEMORIES_FILE = path.join(DATA_DIR, 'memories.json');
 // Current one-file-per-record layout.
 const GALAXIES_DIR = path.join(DATA_DIR, 'galaxies');
 const MEMORIES_DIR = path.join(DATA_DIR, 'memories');
+const PLANETS_DIR = path.join(DATA_DIR, 'planets');
 const INDEX_FILE = path.join(DATA_DIR, 'index.json');
+
+// Max memories ("stars") filed onto one planet before a new one is created.
+const PLANET_STAR_CAP = 28;
 
 // Zipped backups of data/, sibling of data/ (not inside it).
 const BACKUPS_DIR = path.join(__dirname, '..', 'backups');
@@ -35,6 +39,8 @@ module.exports = {
   MEMORIES_FILE,
   GALAXIES_DIR,
   MEMORIES_DIR,
+  PLANETS_DIR,
+  PLANET_STAR_CAP,
   INDEX_FILE,
   BACKUPS_DIR,
   BACKUP_KEEP_COUNT,

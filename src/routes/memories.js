@@ -1,19 +1,47 @@
+const crypto = require('crypto');
 const express = require('express');
-const { MEMORIES_DIR, INDEX_FILE } = require('../config');
+const { MEMORIES_DIR, PLANETS_DIR, PLANET_STAR_CAP, INDEX_FILE } = require('../config');
 const {
   readJSON,
   writeJSON,
   withWriteLock,
   readRecord,
   writeRecord,
+  readAllRecords,
 } = require('../lib/storage');
 const { archiveRecord, restoreRecord, purgeRecord, listDeleted } = require('../lib/archive');
-const { validateMemory } = require('../lib/validate');
+const { validateMemory, validatePlanet } = require('../lib/validate');
+const { randomPlanetName } = require('../lib/planetNames');
 
 const router = express.Router();
 
 function toIndexEntry(doc) {
   return { ...doc, milestone: doc.milestone || false };
+}
+
+// Finds the galaxy's newest planet and files the new star onto it if it has
+// room, otherwise creates the next planet (random pool name). Returns the
+// assigned planet's id. Must be called from inside withWriteLock.
+function assignPlanet(galaxyId) {
+  const planets = readAllRecords(PLANETS_DIR).filter((p) => p.galaxyId === galaxyId && !p.deletedAt);
+  const newest = planets.slice().sort((a, b) => b.index - a.index)[0];
+
+  if (newest && newest.starCount < PLANET_STAR_CAP) {
+    const updated = { ...newest, starCount: newest.starCount + 1 };
+    writeRecord(PLANETS_DIR, updated.id, updated);
+    return updated.id;
+  }
+
+  const { ok, doc } = validatePlanet({
+    id: `planet-${crypto.randomUUID()}`,
+    galaxyId,
+    index: newest ? newest.index + 1 : 0,
+    name: randomPlanetName(),
+    starCount: 1,
+  });
+  if (!ok) throw new Error('failed to create planet');
+  writeRecord(PLANETS_DIR, doc.id, doc);
+  return doc.id;
 }
 
 // Reads the index rather than every memory file. The index mirrors full
@@ -75,7 +103,13 @@ router.post('/', async (req, res) => {
     await withWriteLock(() => {
       const existing = readRecord(MEMORIES_DIR, doc.id);
       if (existing) {
+        // Preserve identity fields set at creation time -- an edit (Phase 7)
+        // re-POSTs the same id and must not get reshuffled onto whatever
+        // planet happens to be active now.
         doc.createdAt = existing.createdAt;
+        doc.planetId = existing.planetId || null;
+      } else {
+        doc.planetId = assignPlanet(doc.galaxyId);
       }
       writeRecord(MEMORIES_DIR, doc.id, doc);
 

@@ -1,5 +1,20 @@
 # Session log
 
+## 2026-08-07 — Scoped PLAN_NEXT into PLAN.md (Phases 7-10), executed Phase 2 (planets data model)
+Completed: Scoped 4 items from docs/PLAN_NEXT.md (memory editing, restore-from-backup UI,
+touch controls, inline undo toast) into docs/PLAN.md as Phases 7-10; implemented and
+manually tested Phase 2 (`planets` record type, ~28-star grouping) end-to-end against live data.
+Decisions: Confirmed with user that re-POSTing an existing memory id (future edit, Phase
+7) preserves its `planetId` rather than reassigning it, mirroring the existing
+`createdAt`-preservation pattern, so upcoming planet navigation isn't destabilized by edits.
+Open issues & next steps: All Phase 2 code is uncommitted; ran `scripts/backfill-planets.js`
+for real against live data (backed up first) to stamp `planetId` onto 4 pre-existing
+memories. Phase 3 (frontend: restrict rendering to the viewed planet) is next and is
+flagged in PLAN.md as the highest-risk phase.
+Files touched: `server.js`, `src/config.js`, `src/lib/storage.js`, `src/lib/validate.js`,
+`src/routes/galaxies.js`, `src/routes/memories.js`, `src/lib/planetNames.js` (new),
+`scripts/backfill-planets.js` (new); `docs/PLAN.md`, `docs/PLAN_NEXT.md` (gitignored).
+
 ## 2026-08-07 — Scoped "Galaxy scaling" plan (stars & planets), executed Phase 1 rename
 Completed: Scoped a 6-phase "Galaxy scaling — stars & planets" plan into docs/PLAN.md
 (groups a galaxy's memories into ~28-star "planets" to fix ring overlap + main-thread

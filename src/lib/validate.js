@@ -32,9 +32,35 @@ function validateGalaxy(body) {
   return { ok: true, doc, errors };
 }
 
+function validatePlanet(body) {
+  const errors = [];
+  const { id, galaxyId, index, name, starCount } = body || {};
+
+  if (!id || !galaxyId || typeof galaxyId !== 'string') {
+    errors.push('invalid planet: id and galaxyId are required');
+    return { ok: false, doc: null, errors };
+  }
+  if (!Number.isInteger(index) || index < 0) {
+    errors.push('invalid planet: index must be a non-negative integer');
+    return { ok: false, doc: null, errors };
+  }
+
+  const doc = {
+    id: String(id),
+    galaxyId: String(galaxyId),
+    index,
+    name: name ? String(name).slice(0, 60) : 'Unnamed',
+    starCount: Number.isInteger(starCount) && starCount >= 0 ? starCount : 0,
+    deletedAt: null,
+    createdAt: new Date().toISOString(),
+  };
+
+  return { ok: true, doc, errors };
+}
+
 function validateMemory(body) {
   const errors = [];
-  const { id, galaxyId, type, title, date, text, photoData, audioData, milestone, relatedIds } = body || {};
+  const { id, galaxyId, type, title, date, text, photoData, audioData, milestone, relatedIds, planetId } = body || {};
 
   if (!id || !ALLOWED_TYPES.includes(type)) {
     errors.push('invalid memory: id and a valid type are required');
@@ -72,6 +98,7 @@ function validateMemory(body) {
     relatedIds: Array.isArray(relatedIds)
       ? relatedIds.filter((x) => typeof x === 'string' && x.trim().length > 0).map(String)
       : [],
+    planetId: planetId ? String(planetId) : null,
     deletedAt: null,
     createdAt: new Date().toISOString(),
   };
@@ -93,4 +120,4 @@ function validateMemory(body) {
   return { ok: true, doc, errors };
 }
 
-module.exports = { validateGalaxy, validateMemory };
+module.exports = { validateGalaxy, validateMemory, validatePlanet };

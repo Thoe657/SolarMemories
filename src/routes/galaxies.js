@@ -1,5 +1,5 @@
 const express = require('express');
-const { GALAXIES_DIR, MEMORIES_DIR, INDEX_FILE } = require('../config');
+const { GALAXIES_DIR, MEMORIES_DIR, PLANETS_DIR, INDEX_FILE } = require('../config');
 const { readJSON, writeJSON, withWriteLock, readRecord, writeRecord, readAllRecords } = require('../lib/storage');
 const { archiveRecord } = require('../lib/archive');
 const { validateGalaxy } = require('../lib/validate');
@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
 });
 
 // Soft delete: archives the galaxy and cascades to archive its (non-deleted)
-// memories too, instead of removing any files.
+// memories and planets too, instead of removing any files.
 router.delete('/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
@@ -60,12 +60,32 @@ router.delete('/:id', async (req, res) => {
         }
       });
       writeJSON(INDEX_FILE, remaining);
+
+      // Planets aren't in index.json, so find this galaxy's via a full scan.
+      readAllRecords(PLANETS_DIR)
+        .filter((p) => p.galaxyId === id)
+        .forEach((p) => archiveRecord(PLANETS_DIR, p.id));
     });
 
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'failed to delete galaxy' });
+  }
+});
+
+// Lists a galaxy's (non-deleted) planets, sorted by index.
+router.get('/:id/planets', (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const planets = readAllRecords(PLANETS_DIR)
+      .filter((p) => p.galaxyId === id)
+      .sort((a, b) => a.index - b.index)
+      .map((p) => ({ id: p.id, index: p.index, name: p.name, starCount: p.starCount }));
+    res.json({ planets });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'failed to load planets' });
   }
 });
 
