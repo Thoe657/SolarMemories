@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SolarMemories ("Maddi's Memories") — a local personal app for storing memories (photos,
 letters, audio) about favourite people. Each person is a "galaxy"; memories orbit as
-"planets"/cards in a Three.js 3D scene, arranged in rings by galaxy.
+"stars"/cards in a Three.js 3D scene, arranged in rings by galaxy. In the outer
+solar-system picker screen (`galaxyPicker.js`), each galaxy is itself shown as a small
+clickable "world" icon — a separate concept from a galaxy's internal stars/cards.
 
 ## Commands
 
@@ -111,6 +113,12 @@ built, key decisions, and what was tested.
 [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md) lists candidate future work (including memory
 editing) that is **not yet scoped** — brainstorm/discuss before turning any item there
 into a real phase; don't treat it as pre-approved.
+
+[docs/PLAN.md](docs/PLAN.md) is the active, scoped plan currently being executed
+(phases 1–6, "Galaxy scaling — stars & planets": renaming memory cards to "stars",
+grouping them into ~28-star "planets" per galaxy, planet navigation, an escalated
+hyperspace transition between planets, and star-shaped milestone visuals). Once all its
+phases are complete, fold it into PLAN_ARCHIVE.md the same way the previous PLAN.md was.
 
 The ground rules below (applied throughout the completed plan) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets

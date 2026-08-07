@@ -590,7 +590,7 @@
     pointer-events: none;
   }
 
-  /* ----- Orbits & planets ----- */
+  /* ----- Orbits & worlds ----- */
   .orbits {
     position: absolute;
     inset: 0;
@@ -632,9 +632,9 @@
   }
 
   /* Layer 3: counter-rotates at the same speed/direction as layer 1,
-     cancelling its parent's rotation so the planet + label stay upright
+     cancelling its parent's rotation so the world + label stay upright
      while still following the circular path traced by layer 2. */
-  .planet {
+  .world {
     position: absolute;
     top: 0;
     left: 0;
@@ -649,17 +649,17 @@
     to { transform: translate(-50%, -50%) rotate(-360deg); }
   }
 
-  .planet:hover .planet-body {
+  .world:hover .world-body {
     transform: scale(1.15);
   }
 
-  .planet-body {
+  .world-body {
     border-radius: 50%;
     flex-shrink: 0;
     transition: transform 0.2s ease;
   }
 
-  .planet-label {
+  .world-label {
     position: absolute;
     top: calc(100% + 18px);
     left: 50%;
@@ -674,8 +674,8 @@
     pointer-events: none;
   }
 
-  /* "new galaxy" planet: dim, dashed outline, plus icon */
-  .planet.new-galaxy-planet .planet-body {
+  /* "new galaxy" world: dim, dashed outline, plus icon */
+  .world.new-galaxy-world .world-body {
     background: rgba(255, 255, 255, 0.04);
     border: 1.5px dashed rgba(255, 240, 220, 0.35);
     display: flex;
@@ -684,12 +684,12 @@
     color: rgba(255, 240, 220, 0.5);
   }
 
-  .planet.new-galaxy-planet:hover .planet-body {
+  .world.new-galaxy-world:hover .world-body {
     border-color: var(--light-glow);
     color: var(--light-glow);
   }
 
-  .planet.new-galaxy-planet .planet-label {
+  .world.new-galaxy-world .world-label {
     color: rgba(255, 240, 220, 0.45);
   }
 

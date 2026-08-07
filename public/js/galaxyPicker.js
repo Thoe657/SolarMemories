@@ -249,11 +249,11 @@ createGalaxyBtn.addEventListener('click', async () => {
 });
 
 // Four fixed orbital radii (px), always drawn, centered on the sun.
-// Ring index 0 is reserved for the "+ new galaxy" planet. Galaxies
+// Ring index 0 is reserved for the "+ new galaxy" world. Galaxies
 // choose from rings 1-3 (displayed as options "1", "2", "3" — the ring
 // just outside the new-galaxy ring, and so on outward).
 const RING_RADII = [90, 165, 240, 320];
-const PLANET_SIZES = [38, 32, 36, 30, 40, 34, 32, 38]; // px, cycling per planet
+const WORLD_SIZES = [38, 32, 36, 30, 40, 34, 32, 38]; // px, cycling per world
 const NEW_GALAXY_RING = 0;
 
 export function renderSolarSystem() {
@@ -288,16 +288,16 @@ export function renderSolarSystem() {
 
     galaxiesOnRing.forEach((g, idx) => {
       const startAngle = (idx / count) * 360 + ring * 23; // spread + per-ring offset
-      addPlanet(g, radius, duration, direction, startAngle, PLANET_SIZES[sizeIndex % PLANET_SIZES.length]);
+      addWorld(g, radius, duration, direction, startAngle, WORLD_SIZES[sizeIndex % WORLD_SIZES.length]);
       sizeIndex++;
     });
   });
 
-  // "+ new galaxy" planet always orbits the innermost ring
-  addPlanet({ __isNew: true }, RING_RADII[NEW_GALAXY_RING], 26 + NEW_GALAXY_RING * 16, 'normal', 180, 34);
+  // "+ new galaxy" world always orbits the innermost ring
+  addWorld({ __isNew: true }, RING_RADII[NEW_GALAXY_RING], 26 + NEW_GALAXY_RING * 16, 'normal', 180, 34);
 }
 
-function addPlanet(g, radius, duration, direction, startAngle, size) {
+function addWorld(g, radius, duration, direction, startAngle, size) {
   // rotating container
   const spin = document.createElement('div');
   spin.className = 'orbit-spin';
@@ -313,15 +313,15 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
   offset.className = 'orbit-offset';
   offset.style.transform = `translateX(${radius}px)`;
 
-  // counter-rotating planet, keeps its label upright
-  const planet = document.createElement('div');
-  planet.className = 'planet';
-  planet.style.animationDuration = `${duration}s`;
-  planet.style.animationDirection = direction;
-  planet.style.animationDelay = delay;
+  // counter-rotating world, keeps its label upright
+  const world = document.createElement('div');
+  world.className = 'world';
+  world.style.animationDuration = `${duration}s`;
+  world.style.animationDirection = direction;
+  world.style.animationDelay = delay;
 
   const body = document.createElement('div');
-  body.className = 'planet-body';
+  body.className = 'world-body';
   body.style.width = `${size}px`;
   body.style.height = `${size}px`;
   body.style.position = 'absolute';
@@ -330,31 +330,31 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
   body.style.transform = 'translate(-50%, -50%)';
 
   const label = document.createElement('span');
-  label.className = 'planet-label';
+  label.className = 'world-label';
 
   if (g.__isNew) {
-    planet.classList.add('new-galaxy-planet');
+    world.classList.add('new-galaxy-world');
     body.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
     body.style.display = 'flex';
     body.style.alignItems = 'center';
     body.style.justifyContent = 'center';
     label.textContent = 'new galaxy';
 
-    planet.appendChild(body);
-    planet.appendChild(label);
-    planet.addEventListener('click', () => openNewGalaxyForm());
+    world.appendChild(body);
+    world.appendChild(label);
+    world.addEventListener('click', () => openNewGalaxyForm());
   } else {
     const color = g.accentColor || '#ffd9a0';
     body.style.background = `radial-gradient(circle at 35% 35%, #fff, ${color} 55%, ${color} 100%)`;
     body.style.boxShadow = `0 0 18px 6px ${color}66, 0 0 36px 14px ${color}33`;
     label.textContent = g.name;
 
-    planet.appendChild(body);
-    planet.appendChild(label);
-    planet.addEventListener('click', () => selectGalaxy(g));
+    world.appendChild(body);
+    world.appendChild(label);
+    world.addEventListener('click', () => selectGalaxy(g));
   }
 
-  offset.appendChild(planet);
+  offset.appendChild(world);
   spin.appendChild(offset);
   orbitsContainer.appendChild(spin);
 }
