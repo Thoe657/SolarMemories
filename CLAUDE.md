@@ -123,7 +123,9 @@ phases are complete, fold it into PLAN_ARCHIVE.md the same way the previous PLAN
 The ground rules below (applied throughout the completed plan) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets
 scoped into a real plan:
-- One git branch per phase; don't combine phases or skip ahead.
+- Work directly on `main`, one phase at a time, committing each phase separately — no
+  per-phase branches (phases 0–14 used one branch per phase; that convention was
+  dropped starting with the "Galaxy scaling" plan). Don't combine phases or skip ahead.
 - Restate the phase's plan and file list before writing code; stop and ask if anything is
   ambiguous, especially anything touching `data/`.
 - Any phase that writes to `data/` must first copy it to `data.bak-<timestamp>/`.
