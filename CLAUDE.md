@@ -51,8 +51,11 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
   clamped 1-3, `photoData`/`audioData` must be well-formed data URLs of the right media
   type, `date` must parse, and payload size is checked against the *decoded* byte length
   of any base64 payload.
-- `lib/planetNames.js` — pool of 24 astronomical names, picked uniformly at random each
-  time a new planet is created (no cross-galaxy uniqueness tracking).
+- `lib/planetNames.js` — pool of 24 astronomical names. `randomPlanetName(taken)` picks
+  uniformly at random from the names not in `taken`; callers pass the names already used
+  in *that galaxy*, since Phase 4 made these names the navigation labels on the portals.
+  Past 24 planets in one galaxy the pool is exhausted and repeats resume. Still no
+  cross-galaxy uniqueness tracking — repeats between galaxies are fine.
 - `lib/archive.js` — soft delete: `archiveRecord`/`restoreRecord`/`purgeRecord` move
   records into a `deleted/` subfolder of their normal dir (e.g. `memories/deleted/<id>.json`)
   instead of removing files; `sweepDeleted` permanently purges anything older than
@@ -64,7 +67,9 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
   Memories routes: `GET /` (reads the index), `GET /trash`, `GET /:id` (full record),
   `POST /` (also assigns the memory to the galaxy's newest planet, creating the next one
   past `PLANET_STAR_CAP`; re-POSTing an existing id preserves its `planetId`, same as
-  `createdAt`), `POST /:id/restore`, `DELETE /:id` (soft delete), `DELETE /:id/forever`.
+  `createdAt`; responds `{ ok, planetId }` so the client can tell whether the new star
+  belongs in the ring it's currently looking at), `POST /:id/restore`, `DELETE /:id`
+  (soft delete), `DELETE /:id/forever`.
   Galaxies routes also have `GET /:id/planets` (list, sorted by index). Galaxy delete
   cascades: archives the galaxy and archives its (non-deleted) memories and planets too.
 
@@ -73,12 +78,14 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
 wiring the others together, calling `init()`, and wiring the quiet-mode toggle. Modules:
 `state.js` (shared mutable app state — `memories`, `currentGalaxy*`, `storageMode`,
 `galaxiesCache`, `currentPlanets`/`currentPlanetIndex` — with setters since ES module
-bindings can only be reassigned by their own module), `util.js` (`escapeHtml`, storage-status helpers), `api.js` (`fetch()`
-wrappers), `cards.js` (polaroid + card-back canvas textures), `scene.js` (Three.js
-renderer/camera/lights/background/animate loop, card meshes, camera drag controls —
-exposes a `setOnCardClick` callback rather than importing the click-handling module
-directly, to avoid a circular import; also owns the in-memory per-session texture
-cache and the adaptive-quality frame-time benchmark — see below), `galaxyPicker.js`
+bindings can only be reassigned by their own module), `util.js` (`escapeHtml`,
+storage-status helpers, the shared bottom-center `showToast`), `api.js` (`fetch()`
+wrappers), `cards.js` (polaroid + card-back + planet-portal canvas textures),
+`scene.js` (Three.js renderer/camera/lights/background/animate loop, card meshes,
+planet portals, camera drag controls — exposes `setOnCardClick`/`setOnPortalClick`
+callbacks rather than importing the handling modules directly, to avoid circular
+imports; also owns the in-memory per-session texture cache and the adaptive-quality
+frame-time benchmark — see below), `galaxyPicker.js`
 (solar system rendering, hyperspace transition, new/edit-galaxy forms, starfield
 parallax + shooting stars), `memoryForm.js` (add-memory form, photo/audio
 compression), `entryScreen.js` (one-time nebula start screen, 2D canvas, gates the
@@ -119,7 +126,21 @@ by `planetId`. Two deliberate fallbacks stop a galaxy ever showing an empty ring
 has stars: a galaxy with no planet records renders everything, and a star with no
 `planetId` (predates planets / backfill never run) is treated as belonging to the oldest
 planet. Anything counting what's *on screen* must use `scene.js`'s `renderedStarCount()`,
-not `memories.length`. There's no way to change the viewed planet yet — that's Phase 4.
+not `memories.length`.
+
+Navigating between planets (Phase 4) goes through `scene.js`'s `showPlanet(index)`, which
+rebuilds the ring's meshes and leaves `memories` alone. Two portal meshes at ±100° sit in
+their own `portalGroup`, outside `cardGroup`, so ring slot indexing and
+`renderedStarCount()` keep counting stars only; the `pointerup` raycast tests both groups
+and routes portal hits to `setOnPortalClick`'s callback (wired up in `galaxyPicker.js`,
+which owns the hyperspace transition). A "next" portal with no successor planet renders
+locked and does nothing but twitch when clicked.
+
+Because the server decides which planet a new star lands on, `memoryForm.js` waits for
+`POST /api/memories` to answer before drawing anything: `scene.js`'s `placeNewStar()`
+refetches the planet list and only adds the mesh when the star landed on the viewed
+planet, otherwise it toasts where it went. Don't go back to rendering the new star
+optimistically — that's the bug it fixes.
 
 ## Data safety
 
@@ -133,6 +154,14 @@ Do not reach for the `DATA_DIR` env var to isolate test writes: on 2026-08-08 an
 reported the right path at startup and the seeded records landed in the real `data/`
 anyway. Take the `data.bak-<timestamp>/` copy before any phase that writes to `data/` —
 that's what made that mishap recoverable.
+
+The separate checkout that works cleanly (used for Phases 4–5, real `data/` verified
+untouched afterwards): `git worktree add --detach <scratch>/testbed HEAD`, copy
+`data.test-fixture/` to `<scratch>/testbed/data`, junction `node_modules` in, and patch
+that copy's `src/config.js` `PORT` to something other than 3000 so it can run alongside
+the real app. `DATA_DIR` resolves from `src/config.js`'s own `__dirname`, so the testbed
+server reads and writes only its own `data/` regardless of cwd. Tear it down with
+`git worktree remove --force`.
 
 ## Development plan
 
@@ -149,10 +178,10 @@ turning any item there into a real phase; don't treat it as pre-approved.
 [docs/PLAN.md](docs/PLAN.md) is the active, scoped plan currently being executed
 (phases 1–10, "Galaxy scaling — stars & planets" plus four items later scoped in from
 PLAN_NEXT.md: memory editing, restore-from-backup UI, touch controls, inline undo
-toast). Phases 1 (rename), 2 (planets data model, backend-only) and 3 (frontend: render
-only the viewed planet) are done; Phase 4 (planet navigation portal) is next. Once all
-its phases are complete, fold it into PLAN_ARCHIVE.md the same way the previous PLAN.md
-was.
+toast). Phases 1 (rename), 2 (planets data model, backend-only), 3 (frontend: render
+only the viewed planet), 4 (planet navigation portals) and 5 (hyperspace escalation) are
+done; Phase 6 (milestone star-shaped visual) is next. Once all its phases are complete,
+fold it into PLAN_ARCHIVE.md the same way the previous PLAN.md was.
 
 The ground rules below (applied throughout the completed plan) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets
