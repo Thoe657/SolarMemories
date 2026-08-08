@@ -1,9 +1,9 @@
 /* ============================================================
    UI: ADD MEMORY FORM — form logic, photo compression
 ============================================================ */
-import { addMemoryToScene } from './scene.js';
+import { addMemoryToScene, placeNewStar } from './scene.js';
 import { persistMemory } from './api.js';
-import { showStorageWarning } from './util.js';
+import { showStorageWarning, showToast } from './util.js';
 import { memories, currentGalaxyId, storageMode } from './state.js';
 
 const addOverlay = document.getElementById('addOverlay');
@@ -338,12 +338,22 @@ saveMemBtn.addEventListener('click', async () => {
     relatedIds: pendingRelatedIds.slice()
   };
   memories.push(memory);
-  addMemoryToScene(memory);
   closeAddForm();
+  // Which planet a new star lands on is the server's decision (the newest
+  // planet, or a fresh one past the star cap), so drawing it into the ring
+  // waits on that answer — otherwise it can appear on a planet it doesn't
+  // belong to and jump elsewhere on the next reload.
   try {
-    await persistMemory(memory, currentGalaxyId);
+    const saved = await persistMemory(memory, currentGalaxyId);
+    memory.planetId = saved?.planetId || null;
+    const landedOn = await placeNewStar(memory);
+    if (landedOn && !memory.mesh) {
+      showToast(`saved onto ${landedOn.name} — travel there through the portal ✦`);
+    }
   } catch (e) {
     console.warn('Could not save memory', e);
+    // Still show it: unsaved is bad enough without it also vanishing.
+    addMemoryToScene(memory);
     const msg = storageMode === 'remote'
       ? `couldn't save to the gallery server (${e.message || 'connection error'}) — it's shown here but may not persist.`
       : 'couldn\'t save that memory — try connecting a folder for more reliable storage.';

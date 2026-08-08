@@ -82,6 +82,8 @@ export async function persistMemory(memory, galaxyId) {
     const body = await resp.json().catch(() => ({}));
     throw new Error(body.error || `save failed (${resp.status})`);
   }
+  // Carries back the planet the server filed this star onto.
+  return resp.json().catch(() => ({}));
 }
 
 export async function loadAllMemories(galaxyId) {

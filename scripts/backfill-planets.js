@@ -42,12 +42,18 @@ function buildPlan() {
       chunks.push(galaxyMemories.slice(i, i + PLANET_STAR_CAP));
     }
 
+    // Names are navigation labels in the ring, so keep them distinct within
+    // this galaxy — both from planets it already has and from each other.
+    const takenNames = galaxyExistingPlanets.map((p) => p.name);
+
     const planets = chunks.map((chunk) => {
+      const name = randomPlanetName(takenNames);
+      takenNames.push(name);
       const { ok, doc } = validatePlanet({
         id: `planet-${crypto.randomUUID()}`,
         galaxyId,
         index: nextIndex++,
-        name: randomPlanetName(),
+        name,
         starCount: chunk.length,
       });
       if (!ok) throw new Error('failed to build backfill planet');

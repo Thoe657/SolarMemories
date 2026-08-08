@@ -2,7 +2,7 @@
    MAIN — startup and wiring between modules
 ============================================================ */
 import { tryRestoreStorage, loadGalaxies, createBackupRemote } from './api.js';
-import { showStorageWarning, updateStorageStatusUI } from './util.js';
+import { showStorageWarning, showToast, updateStorageStatusUI } from './util.js';
 import { renderSolarSystem } from './galaxyPicker.js';
 import './memoryForm.js';
 import './entryScreen.js';
@@ -31,16 +31,6 @@ quietModeBtn.addEventListener('click', () => {
    BACKUP
 ============================================================ */
 const backupBtn = document.getElementById('backupBtn');
-const backupToast = document.getElementById('backupToast');
-let toastTimer = null;
-
-function showToast(msg, isError = false) {
-  backupToast.textContent = msg;
-  backupToast.classList.toggle('error', isError);
-  backupToast.classList.add('visible');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => backupToast.classList.remove('visible'), 3200);
-}
 
 backupBtn.addEventListener('click', async () => {
   backupBtn.disabled = true;

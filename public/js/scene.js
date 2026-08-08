@@ -2,11 +2,19 @@
    THREE.JS SETUP — renderer/camera/lights/background/animate loop
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
-import { makePolaroidTexture, roundRect } from './cards.js';
+import { makePolaroidTexture, makePortalTexture, roundRect } from './cards.js';
 import { loadAllMemories, loadPlanets } from './api.js';
 import { showStorageWarning } from './util.js';
-import { memories, currentPlanetIndex, setCurrentPlanets, setCurrentPlanetIndex } from './state.js';
-import { shouldDampenMotion, prefersReducedMotion } from './audioManager.js';
+import {
+  memories,
+  currentGalaxy,
+  currentGalaxyId,
+  currentPlanets,
+  currentPlanetIndex,
+  setCurrentPlanets,
+  setCurrentPlanetIndex
+} from './state.js';
+import { shouldDampenMotion, prefersReducedMotion, playUiSound } from './audioManager.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -305,16 +313,27 @@ function loadPhotoImgFor(memory) {
   img.src = memory.photoData;
 }
 
-// Remove all memory cards from the scene and reset state, ready for a
-// different galaxy's memories to be loaded in.
-export function clearGalleryScene() {
+// Tear down every mesh currently in the ring (stars and any loading
+// placeholders) without touching `memories` — used both when leaving a galaxy
+// and when travelling to another of its planets.
+function clearRenderedStars() {
   cardGroup.children.slice().forEach((mesh) => {
     disposeCardMesh(mesh);
     cardGroup.remove(mesh);
+    if (mesh.userData.memory) mesh.userData.memory.mesh = null;
   });
+  loadingPlaceholders = [];
+}
+
+// Remove all memory cards from the scene and reset state, ready for a
+// different galaxy's memories to be loaded in.
+export function clearGalleryScene() {
+  clearRenderedStars();
   memories.length = 0;
   setCurrentPlanets([]);
   setCurrentPlanetIndex(0);
+  updatePortals();
+  updatePlanetLabel();
   document.getElementById('emptyHint').classList.remove('hidden');
 }
 
@@ -339,6 +358,171 @@ function starsOnViewedPlanet(all, planets, planetIndex) {
   ));
 }
 
+/* ============================================================
+   PLANET PORTALS — two markers sitting just outside the card ring,
+   left and right of where you enter, for travelling between a
+   galaxy's planets. They live in their own group so the ring's own
+   bookkeeping (slot index, renderedStarCount) still counts stars only.
+   The "next" portal is shown greyed/locked when no successor planet
+   exists yet; "previous" only appears when there's an earlier planet
+   and is never locked.
+============================================================ */
+const portalGroup = new THREE.Group();
+scene.add(portalGroup);
+
+const PORTAL_RADIUS = 9;    // outside the card ring's 6.5
+const PORTAL_Y = 0.3;       // between the ring's first two height bands
+const PORTAL_SIZE = 2.8;
+// ±100° from straight ahead: to either side, and off the multiples of 22.5°
+// that getCardPosition() places cards on.
+const PORTAL_ANGLES = { prev: -Math.PI * (100 / 180), next: Math.PI * (100 / 180) };
+
+function makePortalMesh(kind) {
+  const geo = new THREE.PlaneGeometry(PORTAL_SIZE, PORTAL_SIZE);
+  const mat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false // the glow's soft edges shouldn't punch holes in the cards behind
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  const angle = PORTAL_ANGLES[kind];
+  const x = Math.sin(angle) * PORTAL_RADIUS;
+  const z = Math.cos(angle) * PORTAL_RADIUS;
+  mesh.position.set(x, PORTAL_Y, z);
+  mesh.rotation.y = angle + Math.PI; // face the center of the ring
+  mesh.userData = {
+    portal: kind,
+    angle,
+    baseX: x,
+    baseZ: z,
+    bobOffset: kind === 'next' ? 0 : Math.PI,
+    locked: false,
+    targetIndex: null,
+    nudgeStart: 0
+  };
+  mesh.visible = false;
+  portalGroup.add(mesh);
+  return mesh;
+}
+
+const portals = { prev: makePortalMesh('prev'), next: makePortalMesh('next') };
+
+function setPortalTexture(mesh, opts) {
+  const old = mesh.material.map;
+  mesh.material.map = makePortalTexture({ color: currentGalaxy?.accentColor || '#ffd9a0', ...opts });
+  mesh.material.needsUpdate = true;
+  old?.dispose();
+}
+
+// Rebuilds both portals from the current planet list and viewed index. A
+// galaxy with no planet records at all shows neither: the ring isn't
+// planet-filtered in that case (see starsOnViewedPlanet), so there's nowhere
+// to travel to.
+function updatePortals() {
+  if (currentPlanets.length === 0) {
+    portals.prev.visible = false;
+    portals.next.visible = false;
+    return;
+  }
+
+  const earlier = currentPlanets.filter((p) => p.index < currentPlanetIndex);
+  const prev = earlier[earlier.length - 1];
+  const next = currentPlanets.find((p) => p.index > currentPlanetIndex);
+
+  portals.prev.visible = !!prev;
+  if (prev) {
+    portals.prev.userData.locked = false;
+    portals.prev.userData.targetIndex = prev.index;
+    setPortalTexture(portals.prev, {
+      direction: 'prev', caption: 'previous planet', label: prev.name, locked: false
+    });
+  }
+
+  portals.next.visible = true;
+  portals.next.userData.locked = !next;
+  portals.next.userData.targetIndex = next ? next.index : null;
+  setPortalTexture(portals.next, next
+    ? { direction: 'next', caption: 'next planet', label: next.name, locked: false }
+    : { direction: 'next', caption: 'next planet', label: 'not formed yet', locked: true });
+}
+
+// Small "you're here" readout in the topbar — without it the portals tell you
+// where you can go but not where you are. Hidden for a galaxy that only has
+// the one planet, where there's nothing to disambiguate.
+function updatePlanetLabel() {
+  const el = document.getElementById('planetLabel');
+  if (!el) return;
+  const pos = currentPlanets.findIndex((p) => p.index === currentPlanetIndex);
+  if (currentPlanets.length < 2 || pos === -1) {
+    el.textContent = '';
+    el.classList.add('hidden');
+    return;
+  }
+  el.textContent = `✦ ${currentPlanets[pos].name} · planet ${pos + 1} of ${currentPlanets.length}`;
+  el.classList.remove('hidden');
+}
+
+// Swap which planet's stars are in the ring. `memories` (the galaxy's stars
+// across every planet) is deliberately left alone — only the meshes change.
+export function showPlanet(planetIndex) {
+  clearRenderedStars();
+  setCurrentPlanetIndex(planetIndex);
+
+  starsOnViewedPlanet(memories, currentPlanets, planetIndex).forEach((mem) => {
+    addMemoryToScene(mem);
+    // a cache hit already has its final texture (photo decoded and all) —
+    // no need to re-decode the image and regenerate it
+    if (!getCachedTexture(mem.id)) loadPhotoImgFor(mem);
+  });
+
+  updatePortals();
+  updatePlanetLabel();
+  document.getElementById('emptyHint').classList.toggle('hidden', renderedStarCount() > 0);
+}
+
+// Places a newly-created star. Which planet it belongs to is the server's
+// call (it files new stars onto the galaxy's newest planet, creating the next
+// one past the cap), so the planet list is refetched and the star only joins
+// the ring if it landed on the planet being viewed. Returns the planet it
+// landed on, or null if that couldn't be determined.
+export async function placeNewStar(memory) {
+  try {
+    setCurrentPlanets(await loadPlanets(currentGalaxyId));
+  } catch (e) {
+    console.warn('Could not refresh planets', e);
+  }
+
+  const viewed = currentPlanets.find((p) => p.index === currentPlanetIndex);
+  // No planetId (a save the server never assigned) or no planets at all means
+  // the ring isn't planet-filtered — show it either way.
+  if (!memory.planetId || !viewed || memory.planetId === viewed.id) {
+    addMemoryToScene(memory);
+  }
+
+  updatePortals();
+  updatePlanetLabel();
+  return currentPlanets.find((p) => p.id === memory.planetId) || null;
+}
+
+// Callback invoked with the target planet index when an unlocked portal is
+// clicked. Wired up by galaxyPicker.js (which owns the transition) rather
+// than imported from there, to avoid a circular import.
+let onPortalClick = null;
+export function setOnPortalClick(fn) {
+  onPortalClick = fn;
+}
+
+function handlePortalClick(mesh) {
+  if (mesh.userData.locked) {
+    // Nothing to travel to yet — acknowledge the click instead of ignoring it.
+    playUiSound('locked');
+    mesh.userData.nudgeStart = performance.now();
+    return;
+  }
+  playUiSound('select');
+  if (onPortalClick) onPortalClick(mesh.userData.targetIndex);
+}
+
 // Load a galaxy's memories into the (already-cleared) scene. Every memory goes
 // into the shared `memories` state, but only the viewed planet's are rendered.
 export async function loadGalaxyMemories(galaxyId) {
@@ -354,18 +538,12 @@ export async function loadGalaxyMemories(galaxyId) {
     showStorageWarning('couldn\'t reach the gallery server — check that "npm start" is running, then reload.');
   }
   setCurrentPlanets(planets);
-  // A galaxy always opens on its oldest planet.
-  setCurrentPlanetIndex(planets.length > 0 ? planets[0].index : 0);
 
   clearLoadingPlaceholders();
   restored.forEach((mem) => memories.push(mem));
 
-  starsOnViewedPlanet(restored, planets, currentPlanetIndex).forEach((mem) => {
-    addMemoryToScene(mem);
-    // a cache hit already has its final texture (photo decoded and all) —
-    // no need to re-decode the image and regenerate it
-    if (!getCachedTexture(mem.id)) loadPhotoImgFor(mem);
-  });
+  // A galaxy always opens on its oldest planet.
+  showPlanet(planets.length > 0 ? planets[0].index : 0);
 }
 
 // Removes a single memory's mesh from the scene (disposing its GPU
@@ -459,10 +637,16 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const intersects = raycaster.intersectObjects(cardGroup.children);
+  const targets = cardGroup.children.concat(portalGroup.children.filter((p) => p.visible));
+  const intersects = raycaster.intersectObjects(targets);
   if (intersects.length > 0) {
     const mesh = intersects[0].object;
-    if (onCardClick) onCardClick(mesh.userData.memory, mesh);
+    if (mesh.userData.portal) {
+      handlePortalClick(mesh);
+    } else if (onCardClick && mesh.userData.memory) {
+      // no memory means it's a loading placeholder — nothing to open yet
+      onCardClick(mesh.userData.memory, mesh);
+    }
   }
 });
 
@@ -574,6 +758,27 @@ function animate(now = 0) {
     mesh.position.y = ud.basePos.y + Math.sin(t * ud.bobSpeed + ud.bobOffset) * 0.08 * motionDamp;
     mesh.rotation.y = ud.baseRotY + Math.sin(t * ud.bobSpeed * 0.3 + ud.bobOffset) * 0.05 * motionDamp;
     mesh.rotation.z = ud.baseRotZ + Math.sin(t * ud.bobSpeed * 0.5 + ud.bobOffset) * 0.03 * motionDamp;
+  });
+
+  // portals: a slow breathing pulse, plus a short shake when a locked one
+  // gets clicked
+  portalGroup.children.forEach((mesh) => {
+    if (!mesh.visible) return;
+    const ud = mesh.userData;
+    const wave = Math.sin(t * 1.1 + ud.bobOffset);
+    const pulse = 1 + wave * 0.035 * motionDamp;
+    mesh.scale.set(pulse, pulse, 1);
+    mesh.position.y = PORTAL_Y + Math.sin(t * 0.5 + ud.bobOffset) * 0.12 * motionDamp;
+    mesh.material.opacity = ud.locked ? 0.6 : 0.9 + 0.1 * wave * motionDamp;
+
+    if (ud.nudgeStart) {
+      const e = (performance.now() - ud.nudgeStart) / 380;
+      // shake along the ring's tangent at this portal's angle
+      const k = e >= 1 ? 0 : Math.sin(e * Math.PI * 4) * (1 - e) * 0.2;
+      if (e >= 1) ud.nudgeStart = 0;
+      mesh.position.x = ud.baseX + Math.cos(ud.angle) * k;
+      mesh.position.z = ud.baseZ - Math.sin(ud.angle) * k;
+    }
   });
 
   // twinkle + drift floating lights

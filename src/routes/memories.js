@@ -36,7 +36,7 @@ function assignPlanet(galaxyId) {
     id: `planet-${crypto.randomUUID()}`,
     galaxyId,
     index: newest ? newest.index + 1 : 0,
-    name: randomPlanetName(),
+    name: randomPlanetName(planets.map((p) => p.name)),
     starCount: 1,
   });
   if (!ok) throw new Error('failed to create planet');
@@ -124,7 +124,9 @@ router.post('/', async (req, res) => {
       writeJSON(INDEX_FILE, index);
     });
 
-    res.status(201).json({ ok: true });
+    // The client needs to know which planet the star was filed onto: it only
+    // renders it into the ring if that's the planet currently being viewed.
+    res.status(201).json({ ok: true, planetId: doc.planetId || null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'failed to save memory' });

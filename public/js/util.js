@@ -10,6 +10,18 @@ export function showStorageWarning(msg) {
   el.innerHTML = `<span class="dot local"></span><span>${escapeHtml(msg)}</span>`;
 }
 
+// Brief message in the shared bottom-center toast.
+let toastTimer = null;
+export function showToast(msg, isError = false) {
+  const el = document.getElementById('backupToast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle('error', isError);
+  el.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 3200);
+}
+
 export function updateStorageStatusUI(storageMode) {
   const el = document.getElementById('storageStatus');
   if (!el) return;

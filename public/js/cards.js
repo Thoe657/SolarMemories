@@ -122,6 +122,114 @@ export function formatDate(dateStr) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/* ============================================================
+   PLANET PORTAL TEXTURE — the ring-edge marker for travelling to a
+   galaxy's next/previous planet. A locked portal (a "next planet"
+   that doesn't exist yet, because the active one still has room) is
+   drawn dashed and greyed instead of glowing, so the ring reads as
+   continuing rather than simply ending.
+============================================================ */
+const LOCKED_TINT = [141, 131, 151];
+
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+export function makePortalTexture({ direction, caption, label, locked, color = '#ffd9a0' }) {
+  const S = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = S; canvas.height = S;
+  const ctx = canvas.getContext('2d');
+
+  const cx = S / 2;
+  const cy = S / 2 - 40; // leaves room for the caption/label under the ring
+  const R = 128;
+  const [r, g, b] = locked ? LOCKED_TINT : hexToRgb(color);
+  const tint = (a) => `rgba(${r}, ${g}, ${b}, ${a})`;
+
+  // soft glow behind the ring
+  const glow = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.7);
+  glow.addColorStop(0, tint(locked ? 0.08 : 0.32));
+  glow.addColorStop(0.55, tint(locked ? 0.03 : 0.12));
+  glow.addColorStop(1, tint(0));
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, S, S);
+
+  // the portal ring — solid when you can travel through it, dashed when locked
+  ctx.strokeStyle = tint(locked ? 0.5 : 0.95);
+  ctx.lineWidth = locked ? 7 : 10;
+  if (locked) ctx.setLineDash([18, 15]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = tint(locked ? 0.16 : 0.42);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R - 24, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (locked) {
+    drawPortalLock(ctx, cx, cy, tint);
+  } else {
+    drawPortalChevron(ctx, cx, cy, direction, tint);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+
+  ctx.fillStyle = tint(locked ? 0.5 : 0.75);
+  ctx.font = '600 26px "Quicksand", sans-serif';
+  ctx.fillText(caption, cx, cy + R + 60);
+
+  ctx.fillStyle = locked ? tint(0.6) : `rgba(255, 238, 194, 0.95)`;
+  ctx.font = '600 44px "Comic Sans MS", "Caveat", cursive, sans-serif';
+  wrapText(ctx, label, cx, cy + R + 112, S - 60, 48);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+// Double chevron pointing the way you'd travel: right for the next planet,
+// left for the previous one.
+function drawPortalChevron(ctx, cx, cy, direction, tint) {
+  const dir = direction === 'prev' ? -1 : 1;
+  ctx.strokeStyle = tint(0.9);
+  ctx.lineWidth = 12;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  [-26, 20].forEach((offset, i) => {
+    ctx.globalAlpha = i === 0 ? 1 : 0.5;
+    const x = cx + dir * offset;
+    ctx.beginPath();
+    ctx.moveTo(x - dir * 22, cy - 30);
+    ctx.lineTo(x + dir * 22, cy);
+    ctx.lineTo(x - dir * 22, cy + 30);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawPortalLock(ctx, cx, cy, tint) {
+  ctx.strokeStyle = tint(0.75);
+  ctx.lineWidth = 10;
+  ctx.lineCap = 'round';
+  // shackle
+  ctx.beginPath();
+  ctx.arc(cx, cy - 12, 24, Math.PI, 0);
+  ctx.stroke();
+  // body
+  ctx.fillStyle = tint(0.55);
+  roundRect(ctx, cx - 36, cy - 12, 72, 56, 10);
+  ctx.fill();
+}
+
 // The reverse side of a card, shown mid-flip: just title + date, no photo.
 export function makeCardBackTexture(memory) {
   const W = 512, H = 600;

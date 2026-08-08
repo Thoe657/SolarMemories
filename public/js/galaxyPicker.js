@@ -4,7 +4,7 @@
 ============================================================ */
 import { createGalaxyRemote, deleteGalaxyRemote, loadTrashedMemories, restoreMemory, deleteMemoryForever } from './api.js';
 import { showStorageWarning } from './util.js';
-import { clearGalleryScene, loadGalaxyMemories, showLoadingPlaceholders } from './scene.js';
+import { clearGalleryScene, loadGalaxyMemories, showLoadingPlaceholders, setOnPortalClick, showPlanet } from './scene.js';
 import { currentGalaxy, galaxiesCache, setCurrentGalaxy, setGalaxiesCache } from './state.js';
 import { playUiSound } from './audioManager.js';
 
@@ -376,6 +376,22 @@ async function selectGalaxy(galaxy) {
   galaxyPicker.classList.add('hidden');
   await loadGalaxyMemories(galaxy.id);
 }
+
+// Travel to another of the open galaxy's planets — the same "swap the scene
+// while the screen is whited out" pattern as entering a galaxy, one planet's
+// stars in place of one galaxy's memories. The hyperspace canvas doesn't take
+// pointer events, so a second portal click during the trip would otherwise
+// land on whatever is underneath.
+let travelling = false;
+setOnPortalClick(async (planetIndex) => {
+  if (travelling || planetIndex === null) return;
+  travelling = true;
+  try {
+    await playHyperspace(() => showPlanet(planetIndex));
+  } finally {
+    travelling = false;
+  }
+});
 
 // Return to the galaxy picker.
 async function showGalaxyPicker() {

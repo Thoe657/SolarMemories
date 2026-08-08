@@ -126,7 +126,7 @@ function stopAmbient() {
 
 // Short, low-volume, skippable UI blip — `kind` just picks a pitch so
 // different actions feel slightly distinct without needing sample assets.
-const UI_FREQUENCIES = { select: 660, flip: 520 };
+const UI_FREQUENCIES = { select: 660, flip: 520, locked: 220 };
 
 export function playUiSound(kind = 'select') {
   if (quiet || !ctx) return;
