@@ -6,7 +6,7 @@ import { createGalaxyRemote, deleteGalaxyRemote, loadTrashedMemories, restoreMem
 import { showStorageWarning } from './util.js';
 import { clearGalleryScene, loadGalaxyMemories, showLoadingPlaceholders, setOnPortalClick, showPlanet } from './scene.js';
 import { currentGalaxy, galaxiesCache, setCurrentGalaxy, setGalaxiesCache } from './state.js';
-import { playUiSound } from './audioManager.js';
+import { playUiSound, prefersReducedMotion } from './audioManager.js';
 
 /* ============================================================
    GALAXY PICKER — twinkling background stars
@@ -97,13 +97,43 @@ function resizeHyperspaceCanvas() {
 resizeHyperspaceCanvas();
 window.addEventListener('resize', resizeHyperspaceCanvas);
 
-// Plays the hyperspace effect. Calls onMid halfway through (the moment of
-// maximum streak/whiteout — good time to swap scene content underneath),
-// and resolves once the effect has fully faded out.
-function playHyperspace(onMid) {
+/* Two intensities of the same effect. `galaxy` is the original, unchanged:
+   crossing between galaxies. `planet` is the escalation used for hopping
+   between planets *within* one galaxy — longer, denser, and drawn in the
+   warm/rose/violet range instead of a single warm white, so the two trips
+   don't feel interchangeable. */
+const HYPERSPACE_PRESETS = {
+  galaxy: {
+    duration: 1100,
+    starCount: 220,
+    speedScale: 1,
+    trailScale: 1,
+    colors: ['255, 245, 225'],
+    flashColor: '255, 250, 240',
+    flashMax: 0.5
+  },
+  planet: {
+    duration: 1750,
+    starCount: 420,
+    speedScale: 1.35,
+    trailScale: 1.5,
+    colors: ['255, 245, 225', '255, 217, 160', '242, 166, 176', '184, 166, 242', '166, 232, 242'],
+    flashColor: '246, 236, 255',
+    flashMax: 0.7
+  }
+};
+
+// Plays the hyperspace effect at the named intensity. Calls onMid halfway
+// through (the moment of maximum streak/whiteout — good time to swap scene
+// content underneath), and resolves once the effect has fully faded out.
+function playHyperspace(onMid, kind = 'galaxy') {
   return new Promise((resolve) => {
-    const DURATION = 1100; // ms
-    const STAR_COUNT = 220;
+    // A stated motion preference outranks the drama: fall back to the shorter,
+    // sparser trip rather than escalating.
+    const preset = HYPERSPACE_PRESETS[prefersReducedMotion() ? 'galaxy' : kind]
+      || HYPERSPACE_PRESETS.galaxy;
+    const DURATION = preset.duration;
+    const STAR_COUNT = preset.starCount;
     const cx = hyperspaceCanvas.width / 2;
     const cy = hyperspaceCanvas.height / 2;
     const maxR = Math.hypot(cx, cy);
@@ -113,8 +143,9 @@ function playHyperspace(onMid) {
       starsData.push({
         angle: Math.random() * Math.PI * 2,
         start: Math.random() * 0.5, // normalized starting distance from center
-        speed: 0.6 + Math.random() * 1.2,
-        width: Math.random() < 0.85 ? 1 + Math.random() * 1.5 : 2 + Math.random() * 2
+        speed: (0.6 + Math.random() * 1.2) * preset.speedScale,
+        width: Math.random() < 0.85 ? 1 + Math.random() * 1.5 : 2 + Math.random() * 2,
+        color: preset.colors[Math.floor(Math.random() * preset.colors.length)]
       });
     }
 
@@ -137,13 +168,13 @@ function playHyperspace(onMid) {
       const travel = t; // 0 -> 1 progress for streak length/position
       starsData.forEach((s) => {
         const dist = (s.start + travel * s.speed) * maxR;
-        const prevDist = Math.max(0, dist - (8 + travel * 60) * s.speed);
+        const prevDist = Math.max(0, dist - (8 + travel * 60) * s.speed * preset.trailScale);
         const x1 = cx + Math.cos(s.angle) * prevDist;
         const y1 = cy + Math.sin(s.angle) * prevDist;
         const x2 = cx + Math.cos(s.angle) * dist;
         const y2 = cy + Math.sin(s.angle) * dist;
 
-        hyCtx.strokeStyle = `rgba(255, 245, 225, ${0.25 + 0.65 * intensity})`;
+        hyCtx.strokeStyle = `rgba(${s.color}, ${0.25 + 0.65 * intensity})`;
         hyCtx.lineWidth = s.width * (0.5 + intensity);
         hyCtx.beginPath();
         hyCtx.moveTo(x1, y1);
@@ -154,7 +185,7 @@ function playHyperspace(onMid) {
       // whiteout flash at the peak
       if (intensity > 0.7) {
         const flash = (intensity - 0.7) / 0.3;
-        hyCtx.fillStyle = `rgba(255, 250, 240, ${flash * 0.5})`;
+        hyCtx.fillStyle = `rgba(${preset.flashColor}, ${flash * preset.flashMax})`;
         hyCtx.fillRect(0, 0, hyperspaceCanvas.width, hyperspaceCanvas.height);
       }
 
@@ -387,7 +418,7 @@ setOnPortalClick(async (planetIndex) => {
   if (travelling || planetIndex === null) return;
   travelling = true;
   try {
-    await playHyperspace(() => showPlanet(planetIndex));
+    await playHyperspace(() => showPlanet(planetIndex), 'planet');
   } finally {
     travelling = false;
   }
