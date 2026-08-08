@@ -3,9 +3,9 @@
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
 import { makePolaroidTexture, roundRect } from './cards.js';
-import { loadAllMemories } from './api.js';
+import { loadAllMemories, loadPlanets } from './api.js';
 import { showStorageWarning } from './util.js';
-import { memories } from './state.js';
+import { memories, currentPlanetIndex, setCurrentPlanets, setCurrentPlanetIndex } from './state.js';
 import { shouldDampenMotion, prefersReducedMotion } from './audioManager.js';
 
 const container = document.getElementById('scene-container');
@@ -210,7 +210,10 @@ export function addMemoryToScene(memory) {
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
 
-  const { pos, angle } = getCardPosition(memories.length);
+  // Ring slot comes from how many stars are *rendered*, not how many the
+  // galaxy has — `memories` now spans every planet, only one of which is
+  // in the ring at a time.
+  const { pos, angle } = getCardPosition(cardGroup.children.length);
   mesh.position.copy(pos);
   // face the card toward the center of the ring (toward the viewer)
   mesh.rotation.y = angle + Math.PI;
@@ -310,21 +313,54 @@ export function clearGalleryScene() {
     cardGroup.remove(mesh);
   });
   memories.length = 0;
+  setCurrentPlanets([]);
+  setCurrentPlanetIndex(0);
   document.getElementById('emptyHint').classList.remove('hidden');
 }
 
-// Load a galaxy's memories into the (already-cleared) scene.
+// How many stars are actually in the ring right now — i.e. the viewed
+// planet's, not the whole galaxy's.
+export function renderedStarCount() {
+  return cardGroup.children.length;
+}
+
+// Picks the subset of a galaxy's memories that belongs in the ring: the ones
+// filed onto the viewed planet. Two fallbacks keep a galaxy from ever
+// rendering an empty ring when it has stars to show:
+//  - no planets at all (nothing has been filed yet) → render everything;
+//  - a star with no planetId (predates planets, backfill not run) → treat it
+//    as belonging to the oldest planet.
+function starsOnViewedPlanet(all, planets, planetIndex) {
+  if (planets.length === 0) return all;
+  const viewed = planets.find((p) => p.index === planetIndex);
+  if (!viewed) return [];
+  return all.filter((m) => (
+    m.planetId ? m.planetId === viewed.id : viewed.index === 0
+  ));
+}
+
+// Load a galaxy's memories into the (already-cleared) scene. Every memory goes
+// into the shared `memories` state, but only the viewed planet's are rendered.
 export async function loadGalaxyMemories(galaxyId) {
   let restored = [];
+  let planets = [];
   try {
-    restored = await loadAllMemories(galaxyId);
+    [restored, planets] = await Promise.all([
+      loadAllMemories(galaxyId),
+      loadPlanets(galaxyId)
+    ]);
   } catch (e) {
     console.warn('Could not load memories', e);
     showStorageWarning('couldn\'t reach the gallery server — check that "npm start" is running, then reload.');
   }
+  setCurrentPlanets(planets);
+  // A galaxy always opens on its oldest planet.
+  setCurrentPlanetIndex(planets.length > 0 ? planets[0].index : 0);
+
   clearLoadingPlaceholders();
-  restored.forEach((mem) => {
-    memories.push(mem);
+  restored.forEach((mem) => memories.push(mem));
+
+  starsOnViewedPlanet(restored, planets, currentPlanetIndex).forEach((mem) => {
     addMemoryToScene(mem);
     // a cache hit already has its final texture (photo decoded and all) —
     // no need to re-decode the image and regenerate it

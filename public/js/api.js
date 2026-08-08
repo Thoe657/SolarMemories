@@ -50,6 +50,16 @@ export async function deleteGalaxyRemote(id) {
   }
 }
 
+// A galaxy's planets (star groupings), sorted by index — oldest first.
+export async function loadPlanets(galaxyId) {
+  const resp = await fetch(`${GALAXIES_URL}/${encodeURIComponent(galaxyId)}/planets`);
+  if (!resp.ok) {
+    throw new Error(`load failed (${resp.status})`);
+  }
+  const body = await resp.json();
+  return body.planets || [];
+}
+
 export async function persistMemory(memory, galaxyId) {
   const payload = {
     id: String(memory.id),
@@ -90,7 +100,8 @@ export async function loadAllMemories(galaxyId) {
     photoImg: null,
     audioData: entry.audioData || null,
     milestone: !!entry.milestone,
-    relatedIds: Array.isArray(entry.relatedIds) ? entry.relatedIds.map(String) : []
+    relatedIds: Array.isArray(entry.relatedIds) ? entry.relatedIds.map(String) : [],
+    planetId: entry.planetId || null
   }));
 }
 

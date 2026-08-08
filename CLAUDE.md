@@ -72,8 +72,8 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
 `public/js/main.js` is the module entrypoint (imported via `<script type="module">`),
 wiring the others together, calling `init()`, and wiring the quiet-mode toggle. Modules:
 `state.js` (shared mutable app state — `memories`, `currentGalaxy*`, `storageMode`,
-`galaxiesCache` — with setters since ES module bindings can only be reassigned by their
-own module), `util.js` (`escapeHtml`, storage-status helpers), `api.js` (`fetch()`
+`galaxiesCache`, `currentPlanets`/`currentPlanetIndex` — with setters since ES module
+bindings can only be reassigned by their own module), `util.js` (`escapeHtml`, storage-status helpers), `api.js` (`fetch()`
 wrappers), `cards.js` (polaroid + card-back canvas textures), `scene.js` (Three.js
 renderer/camera/lights/background/animate loop, card meshes, camera drag controls —
 exposes a `setOnCardClick` callback rather than importing the click-handling module
@@ -109,8 +109,17 @@ Data schema:
 - memory: `{ id, galaxyId, type ('photo'|'letter'|'audio'), title, date, text, photoData, audioData, milestone, relatedIds, planetId, deletedAt, createdAt }`
 - planet: `{ id, galaxyId, index, name, starCount, deletedAt, createdAt }` — a galaxy's
   memories are grouped onto planets of up to `PLANET_STAR_CAP` (28) each, server-assigned
-  at memory-creation time; the frontend doesn't consume `planetId` yet (still Phase 3,
-  see below).
+  at memory-creation time.
+
+Planets and the ring: `state.memories` holds **every** star in the open galaxy (so
+related-memory links and the related-memory picker reach across planets), but `scene.js`
+renders only the *viewed* planet's — `loadGalaxyMemories()` fetches the galaxy's planets
+alongside its memories, defaults `currentPlanetIndex` to the oldest planet, and filters
+by `planetId`. Two deliberate fallbacks stop a galaxy ever showing an empty ring when it
+has stars: a galaxy with no planet records renders everything, and a star with no
+`planetId` (predates planets / backfill never run) is treated as belonging to the oldest
+planet. Anything counting what's *on screen* must use `scene.js`'s `renderedStarCount()`,
+not `memories.length`. There's no way to change the viewed planet yet — that's Phase 4.
 
 ## Data safety
 
@@ -133,10 +142,10 @@ turning any item there into a real phase; don't treat it as pre-approved.
 [docs/PLAN.md](docs/PLAN.md) is the active, scoped plan currently being executed
 (phases 1–10, "Galaxy scaling — stars & planets" plus four items later scoped in from
 PLAN_NEXT.md: memory editing, restore-from-backup UI, touch controls, inline undo
-toast). Phases 1 (rename) and 2 (planets data model, backend-only) are done; Phase 3
-(frontend: restrict rendering to the viewed planet) is next and is flagged as the
-highest-risk phase. Once all its phases are complete, fold it into PLAN_ARCHIVE.md the
-same way the previous PLAN.md was.
+toast). Phases 1 (rename), 2 (planets data model, backend-only) and 3 (frontend: render
+only the viewed planet) are done; Phase 4 (planet navigation portal) is next. Once all
+its phases are complete, fold it into PLAN_ARCHIVE.md the same way the previous PLAN.md
+was.
 
 The ground rules below (applied throughout the completed plan) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets

@@ -55,4 +55,5 @@ docs/
 node/
 data/
 data.bak-*/
+data.polluted-*/
 backups/

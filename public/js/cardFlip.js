@@ -7,7 +7,7 @@
 import { deleteMemory as deleteMemoryRemote } from './api.js';
 import { escapeHtml, showStorageWarning } from './util.js';
 import { formatDate, makeCardBackTexture } from './cards.js';
-import { removeMemoryFromScene, setOnCardClick, getMeshScreenRect, setDragLocked } from './scene.js';
+import { removeMemoryFromScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount } from './scene.js';
 import { memories } from './state.js';
 import { playUiSound } from './audioManager.js';
 
@@ -188,7 +188,9 @@ async function deleteMemoryAndClose(memory) {
   const idx = memories.findIndex((m) => m.id === memory.id);
   if (idx >= 0) memories.splice(idx, 1);
 
-  if (memories.length === 0) {
+  // The hint is about the ring being empty, so it tracks rendered stars —
+  // `memories` also holds the galaxy's other planets' stars.
+  if (renderedStarCount() === 0) {
     document.getElementById('emptyHint').classList.remove('hidden');
   }
 
