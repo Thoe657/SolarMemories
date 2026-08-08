@@ -127,6 +127,13 @@ not `memories.length`. There's no way to change the viewed planet yet — that's
 disposable. `docs/` and `node/` are also gitignored (present locally, not tracked).
 `backups/` (zipped snapshots of `data/`) is a sibling of `data/`, also not tracked.
 
+Need a galaxy with more than one planet to test against? Use `data.test-fixture/`
+(gitignored, synthetic, see its README) — copy it over a **separate checkout's** `data/`.
+Do not reach for the `DATA_DIR` env var to isolate test writes: on 2026-08-08 an override
+reported the right path at startup and the seeded records landed in the real `data/`
+anyway. Take the `data.bak-<timestamp>/` copy before any phase that writes to `data/` —
+that's what made that mishap recoverable.
+
 ## Development plan
 
 Phases 0–14 (file structure split, validation, per-record storage, archive-not-delete,

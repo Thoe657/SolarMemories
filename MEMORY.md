@@ -1,5 +1,26 @@
 # Session log
 
+## 2026-08-08 — Phase 3: frontend renders only the viewed planet's stars
+Completed: Implemented Phase 3 — `loadGalaxyMemories()` fetches a galaxy's planets
+alongside its memories, opens on the oldest, and renders only that planet's stars
+(verified 28 of 35 rendering on a 2-planet test galaxy). A test seed aimed at an isolated
+`DATA_DIR` landed in the real `data/` anyway; recovered exactly from the pre-phase
+`data.bak-` copy, and the stripped test records are kept as `data.test-fixture/`.
+Decisions: `state.memories` still holds every star in the galaxy and only *rendering* is
+filtered, because `cardFlip.js`'s related-memory chips and `memoryForm.js`'s picker
+resolve ids against that array — narrowing it would have silently broken cross-planet
+links. Seed future test data from a separate checkout, never a `DATA_DIR` override, which
+didn't isolate writes despite reporting the override path at startup.
+Open issues & next steps: Ring layout is still unconfirmed by eye — the in-app browser
+pane stalled `requestAnimationFrame` again (same gotcha as the 2026-08-06 entry), so
+everything was verified by importing the live ES modules in the page console. Phase 4
+(planet-navigation portal) is next and must make the add-memory flow planet-aware:
+adding a star while viewing a non-active planet renders it in the wrong ring until reload.
+Files touched: `public/js/scene.js`, `public/js/state.js`, `public/js/api.js`,
+`public/js/cardFlip.js`, `CLAUDE.md`, `.gitignore`; `docs/PLAN.md` and
+`data.test-fixture/` (both gitignored).
+Commits: bda5d87..7a53641
+
 ## 2026-08-07 — Scoped PLAN_NEXT into PLAN.md (Phases 7-10), executed Phase 2 (planets data model)
 Completed: Scoped 4 items from docs/PLAN_NEXT.md (memory editing, restore-from-backup UI,
 touch controls, inline undo toast) into docs/PLAN.md as Phases 7-10; implemented and
