@@ -2,7 +2,7 @@
    THREE.JS SETUP — renderer/camera/lights/background/animate loop
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
-import { makePolaroidTexture, makePortalTexture, roundRect } from './cards.js';
+import { makePolaroidTexture, makePlanetSurfaceTexture, makePortalLabelTexture, roundRect } from './cards.js';
 import { loadAllMemories, loadPlanets } from './api.js';
 import { showStorageWarning } from './util.js';
 import {
@@ -148,29 +148,77 @@ scene.add(cardGroup);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-// layout positions for cards — arranged in a ring around the viewer so the
-// gallery wraps seamlessly as you turn around (360°)
-const RING_RADIUS = 6.5;
+/* ----- Ring layout -----
+   Stars spread evenly around the viewer: one row at eye level up to
+   ROW_CAPACITY, two rows past that. Both rows use the *same* angular step,
+   so stars line up in columns and a partly-filled second row simply leaves
+   its last slot empty instead of drifting out of phase with the row above.
 
-function getCardPosition(index) {
-  const perLevel = 8; // cards per ring level
-  const level = Math.floor(index / perLevel);
-  const slot = index % perLevel;
+   The layout is a function of how many stars are in the ring, not of each
+   star's arrival order, so everything is re-spaced whenever that count
+   changes (applyRingLayout below). A half-full planet therefore spreads
+   across the whole circle instead of bunching up with a gap behind you, and
+   deleting a star closes its gap rather than leaving a hole.
 
-  // spread levels slightly in height, alternating up/down from eye level
-  const levelHeights = [1.4, -0.6, 3.0, -2.4];
-  const y = levelHeights[level % levelHeights.length] + (Math.random() - 0.5) * 0.3;
+   What this replaces: 8 stars per level across 4 fixed heights, where levels
+   0 and 2 landed on the *same* angles only 1.6 apart with cards 1.8 tall —
+   so every level-2 card overlapped a level-0 card. That was the stacking. */
+const RING_RADIUS = 8.2;
+const ROW_CAPACITY = 18;            // stars in one row before a second row opens
+const ONE_ROW_HEIGHT = 1.2;         // the camera's own eye level
+const TWO_ROW_HEIGHTS = [2.3, 0.1]; // 2.2 apart for cards 1.8 tall → a 0.4 gap
 
-  // even spacing around the full circle, with a small per-level offset so
-  // levels don't perfectly stack
-  const angleOffset = (level * Math.PI) / perLevel;
-  const angle = (slot / perLevel) * Math.PI * 2 + angleOffset;
+// Widest a gap between neighbouring stars is allowed to get. Dividing the full
+// circle by the count alone is even but goes hollow when a planet is only part
+// full — 7 stars would sit 51° apart, one per screenful, and you'd spin all the
+// way round to see them. Past this the ring stops wrapping and becomes an arc
+// centred on where you're facing when you arrive, so a small collection reads
+// as a small collection. A full planet's natural step is below this, so it
+// still closes into a complete circle.
+const MAX_ANGULAR_STEP = (26 * Math.PI) / 180;
 
-  const r = RING_RADIUS + (Math.random() - 0.5) * 0.6;
-  const x = Math.sin(angle) * r;
-  const z = Math.cos(angle) * r;
+function ringSlot(index, total, jitter) {
+  const rows = total > ROW_CAPACITY ? 2 : 1;
+  const heights = rows === 2 ? TWO_ROW_HEIGHTS : [ONE_ROW_HEIGHT];
+  const perRow = Math.ceil(total / rows);
 
-  return { pos: new THREE.Vector3(x, y, z), angle };
+  const step = Math.min((Math.PI * 2) / perRow, MAX_ANGULAR_STEP);
+  // column-major, so the rows stay balanced and vertically aligned
+  const col = Math.floor(index / rows);
+  const angle = (col - (perRow - 1) / 2) * step;
+  const r = RING_RADIUS + jitter.r;
+
+  return {
+    pos: new THREE.Vector3(
+      Math.sin(angle) * r,
+      heights[index % rows] + jitter.y,
+      Math.cos(angle) * r
+    ),
+    angle
+  };
+}
+
+// Per-star offsets, rolled once at creation and reused on every re-layout, so
+// the ring keeps a little hand-placed looseness without the stars twitching
+// each time one is added or removed.
+function makeStarJitter() {
+  return {
+    r: (Math.random() - 0.5) * 0.24,
+    y: (Math.random() - 0.5) * 0.1,
+    tilt: (Math.random() - 0.5) * 0.1
+  };
+}
+
+// Re-spaces everything currently in the ring for the count it now holds.
+function applyRingLayout() {
+  const total = cardGroup.children.length;
+  cardGroup.children.forEach((mesh, i) => {
+    const { pos, angle } = ringSlot(i, total, mesh.userData.jitter);
+    mesh.position.copy(pos);
+    mesh.rotation.y = angle + Math.PI; // face the center of the ring
+    mesh.userData.basePos = pos.clone();
+    mesh.userData.baseRotY = mesh.rotation.y;
+  });
 }
 
 /* ============================================================
@@ -218,16 +266,8 @@ export function addMemoryToScene(memory) {
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
 
-  // Ring slot comes from how many stars are *rendered*, not how many the
-  // galaxy has — `memories` now spans every planet, only one of which is
-  // in the ring at a time.
-  const { pos, angle } = getCardPosition(cardGroup.children.length);
-  mesh.position.copy(pos);
-  // face the card toward the center of the ring (toward the viewer)
-  mesh.rotation.y = angle + Math.PI;
-  mesh.rotation.z = (Math.random() - 0.5) * 0.12;
-  mesh.userData.basePos = pos.clone();
-  mesh.userData.baseRotY = mesh.rotation.y;
+  mesh.userData.jitter = makeStarJitter();
+  mesh.rotation.z = mesh.userData.jitter.tilt;
   mesh.userData.baseRotZ = mesh.rotation.z;
   mesh.userData.bobOffset = Math.random() * Math.PI * 2;
   mesh.userData.bobSpeed = 0.4 + Math.random() * 0.3;
@@ -235,6 +275,11 @@ export function addMemoryToScene(memory) {
 
   cardGroup.add(mesh);
   memory.mesh = mesh;
+
+  // Position comes from the ring's new total, so the stars already up there
+  // shuffle over to make room evenly rather than this one landing on a slot
+  // sized for a ring that no longer exists.
+  applyRingLayout();
 
   document.getElementById('emptyHint').classList.add('hidden');
 }
@@ -269,11 +314,7 @@ export function showLoadingPlaceholders() {
     const mat = new THREE.MeshBasicMaterial({ map: makePlaceholderTexture(), transparent: true, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
 
-    const { pos, angle } = getCardPosition(i);
-    mesh.position.copy(pos);
-    mesh.rotation.y = angle + Math.PI;
-    mesh.userData.basePos = pos.clone();
-    mesh.userData.baseRotY = mesh.rotation.y;
+    mesh.userData.jitter = makeStarJitter();
     mesh.userData.baseRotZ = 0;
     mesh.userData.bobOffset = Math.random() * Math.PI * 2;
     mesh.userData.bobSpeed = 0.4 + Math.random() * 0.3;
@@ -281,6 +322,7 @@ export function showLoadingPlaceholders() {
     cardGroup.add(mesh);
     loadingPlaceholders.push(mesh);
   }
+  applyRingLayout();
 }
 
 export function clearLoadingPlaceholders() {
@@ -370,48 +412,107 @@ function starsOnViewedPlanet(all, planets, planetIndex) {
 const portalGroup = new THREE.Group();
 scene.add(portalGroup);
 
-const PORTAL_RADIUS = 9;    // outside the card ring's 6.5
-const PORTAL_Y = 0.3;       // between the ring's first two height bands
-const PORTAL_SIZE = 2.8;
-// ±100° from straight ahead: to either side, and off the multiples of 22.5°
-// that getCardPosition() places cards on.
+// Nothing else in the scene reacts to lights — cards, fairy lights and the
+// background sky are all MeshBasicMaterial — so this only shapes the portal
+// planets, which are the one lit surface here.
+//
+// It sits above the middle of the ring, i.e. above the viewer, because both
+// portals hang off to the sides: lighting from there catches the hemisphere
+// each one turns toward you, with the terminator falling just below centre.
+// A directional light aimed from one side left whichever planet faced away
+// from it as a near-black disc. decay 0 keeps it from falling off over the
+// 26 units out to the portals.
+const portalSun = new THREE.PointLight(0xfff2dd, 2.4, 0, 0);
+portalSun.position.set(0, 14, 0);
+scene.add(portalSun);
+
+/* Vertical budget, since it's tight: the top row of stars tops out around 13.7°
+   of elevation and the camera's 55° vertical FOV reaches 27.5°, leaving a ~14°
+   band of clear sky. The planet is sized and placed to sit fully inside it
+   (15°–26°) so it's in view without tilting; its caption plate rides just above
+   that, which is the one part you tilt up a few degrees to read. Below the
+   planet was tried first and is worse — the plate lands inside the card band
+   and gets occluded by the ring. */
+const PORTAL_DISTANCE = 26;                        // well beyond the 8.2 card ring
+const PORTAL_ELEVATION = (20.5 * Math.PI) / 180;
+const PORTAL_BODY_RADIUS = 2.7;                    // ~11° across: a big distant world
 const PORTAL_ANGLES = { prev: -Math.PI * (100 / 180), next: Math.PI * (100 / 180) };
 
-function makePortalMesh(kind) {
-  const geo = new THREE.PlaneGeometry(PORTAL_SIZE, PORTAL_SIZE);
-  const mat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false // the glow's soft edges shouldn't punch holes in the cards behind
-  });
-  const mesh = new THREE.Mesh(geo, mat);
+function makePortalObject(kind) {
+  const group = new THREE.Group();
   const angle = PORTAL_ANGLES[kind];
-  const x = Math.sin(angle) * PORTAL_RADIUS;
-  const z = Math.cos(angle) * PORTAL_RADIUS;
-  mesh.position.set(x, PORTAL_Y, z);
-  mesh.rotation.y = angle + Math.PI; // face the center of the ring
-  mesh.userData = {
-    portal: kind,
-    angle,
-    baseX: x,
-    baseZ: z,
-    bobOffset: kind === 'next' ? 0 : Math.PI,
+  group.position.set(
+    Math.sin(angle) * PORTAL_DISTANCE,
+    camera.position.y + PORTAL_DISTANCE * Math.tan(PORTAL_ELEVATION),
+    Math.cos(angle) * PORTAL_DISTANCE
+  );
+  group.rotation.y = angle + Math.PI; // turns the caption plate to face the viewer
+  group.visible = false;
+  portalGroup.add(group);
+
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(PORTAL_BODY_RADIUS, 48, 32),
+    new THREE.MeshLambertMaterial({ transparent: true })
+  );
+  body.userData.portal = kind;
+  group.add(body);
+
+  // thin shell of atmosphere, seen edge-on around the limb
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(PORTAL_BODY_RADIUS * 1.14, 32, 24),
+    new THREE.MeshBasicMaterial({
+      side: THREE.BackSide, transparent: true, opacity: 0.2, depthWrite: false
+    })
+  );
+  group.add(halo);
+
+  const labelWidth = PORTAL_BODY_RADIUS * 2.2;
+  const label = new THREE.Mesh(
+    // 2:1, matching makePortalLabelTexture's canvas, so the text isn't squashed
+    new THREE.PlaneGeometry(labelWidth, labelWidth / 2),
+    new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
+  );
+  // Beside the planet, not above or below it. Stacking doesn't fit: the clear
+  // sky between the top row of stars (13.7°) and the top of the view (27.5°)
+  // is only about 14° tall, which the planet alone nearly fills — above put
+  // the caption off-screen, below put it behind the ring. Sideways is free.
+  // Local +x runs toward *decreasing* azimuth once the group is turned to face
+  // the viewer, so the sign here keeps both captions on their inward side.
+  label.position.x = (kind === 'next' ? 1 : -1) * (PORTAL_BODY_RADIUS + labelWidth / 2 + 0.3);
+  label.userData.portal = kind;
+  group.add(label);
+
+  return {
+    kind, group, body, halo, label,
+    spin: kind === 'next' ? 0.012 : -0.009,
     locked: false,
     targetIndex: null,
     nudgeStart: 0
   };
-  mesh.visible = false;
-  portalGroup.add(mesh);
-  return mesh;
 }
 
-const portals = { prev: makePortalMesh('prev'), next: makePortalMesh('next') };
+const portals = { prev: makePortalObject('prev'), next: makePortalObject('next') };
 
-function setPortalTexture(mesh, opts) {
-  const old = mesh.material.map;
-  mesh.material.map = makePortalTexture({ color: currentGalaxy?.accentColor || '#ffd9a0', ...opts });
-  mesh.material.needsUpdate = true;
-  old?.dispose();
+function setPortalAppearance(portal, { caption, label, locked }) {
+  const color = currentGalaxy?.accentColor || '#ffd9a0';
+
+  const oldSurface = portal.body.material.map;
+  portal.body.material.map = makePlanetSurfaceTexture({ color, locked });
+  // A locked planet is a ghost of a world, but still has to read as one — at
+  // half opacity over a starfield it disappeared and left the caption floating.
+  portal.body.material.opacity = locked ? 0.72 : 1;
+  portal.body.material.needsUpdate = true;
+  oldSurface?.dispose();
+
+  const oldLabel = portal.label.material.map;
+  portal.label.material.map = makePortalLabelTexture({ caption, label, locked });
+  portal.label.material.needsUpdate = true;
+  oldLabel?.dispose();
+
+  // an unformed planet gets no atmosphere — it reads as a ghost of a world
+  portal.halo.visible = !locked;
+  portal.halo.material.color.set(color);
+  portal.locked = locked;
 }
 
 // Rebuilds both portals from the current planet list and viewed index. A
@@ -420,8 +521,8 @@ function setPortalTexture(mesh, opts) {
 // to travel to.
 function updatePortals() {
   if (currentPlanets.length === 0) {
-    portals.prev.visible = false;
-    portals.next.visible = false;
+    portals.prev.group.visible = false;
+    portals.next.group.visible = false;
     return;
   }
 
@@ -429,21 +530,19 @@ function updatePortals() {
   const prev = earlier[earlier.length - 1];
   const next = currentPlanets.find((p) => p.index > currentPlanetIndex);
 
-  portals.prev.visible = !!prev;
+  portals.prev.group.visible = !!prev;
   if (prev) {
-    portals.prev.userData.locked = false;
-    portals.prev.userData.targetIndex = prev.index;
-    setPortalTexture(portals.prev, {
-      direction: 'prev', caption: 'previous planet', label: prev.name, locked: false
+    portals.prev.targetIndex = prev.index;
+    setPortalAppearance(portals.prev, {
+      caption: 'previous planet', label: prev.name, locked: false
     });
   }
 
-  portals.next.visible = true;
-  portals.next.userData.locked = !next;
-  portals.next.userData.targetIndex = next ? next.index : null;
-  setPortalTexture(portals.next, next
-    ? { direction: 'next', caption: 'next planet', label: next.name, locked: false }
-    : { direction: 'next', caption: 'next planet', label: 'not formed yet', locked: true });
+  portals.next.group.visible = true;
+  portals.next.targetIndex = next ? next.index : null;
+  setPortalAppearance(portals.next, next
+    ? { caption: 'next planet', label: next.name, locked: false }
+    : { caption: 'next planet', label: 'not formed yet', locked: true });
 }
 
 // Small "you're here" readout in the topbar — without it the portals tell you
@@ -512,15 +611,15 @@ export function setOnPortalClick(fn) {
   onPortalClick = fn;
 }
 
-function handlePortalClick(mesh) {
-  if (mesh.userData.locked) {
+function handlePortalClick(portal) {
+  if (portal.locked) {
     // Nothing to travel to yet — acknowledge the click instead of ignoring it.
     playUiSound('locked');
-    mesh.userData.nudgeStart = performance.now();
+    portal.nudgeStart = performance.now();
     return;
   }
   playUiSound('select');
-  if (onPortalClick) onPortalClick(mesh.userData.targetIndex);
+  if (onPortalClick) onPortalClick(portal.targetIndex);
 }
 
 // Load a galaxy's memories into the (already-cleared) scene. Every memory goes
@@ -552,6 +651,8 @@ export function removeMemoryFromScene(memory) {
   if (memory.mesh) {
     disposeCardMesh(memory.mesh);
     cardGroup.remove(memory.mesh);
+    memory.mesh = null;
+    applyRingLayout(); // close the gap rather than leaving a hole in the ring
   }
   textureCache.delete(memory.id);
 }
@@ -637,12 +738,14 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const targets = cardGroup.children.concat(portalGroup.children.filter((p) => p.visible));
-  const intersects = raycaster.intersectObjects(targets);
+  const portalTargets = Object.values(portals)
+    .filter((p) => p.group.visible)
+    .flatMap((p) => [p.body, p.label]);
+  const intersects = raycaster.intersectObjects(cardGroup.children.concat(portalTargets));
   if (intersects.length > 0) {
     const mesh = intersects[0].object;
     if (mesh.userData.portal) {
-      handlePortalClick(mesh);
+      handlePortalClick(portals[mesh.userData.portal]);
     } else if (onCardClick && mesh.userData.memory) {
       // no memory means it's a loading placeholder — nothing to open yet
       onCardClick(mesh.userData.memory, mesh);
@@ -760,25 +863,19 @@ function animate(now = 0) {
     mesh.rotation.z = ud.baseRotZ + Math.sin(t * ud.bobSpeed * 0.5 + ud.bobOffset) * 0.03 * motionDamp;
   });
 
-  // portals: a slow breathing pulse, plus a short shake when a locked one
-  // gets clicked
-  portalGroup.children.forEach((mesh) => {
-    if (!mesh.visible) return;
-    const ud = mesh.userData;
-    const wave = Math.sin(t * 1.1 + ud.bobOffset);
-    const pulse = 1 + wave * 0.035 * motionDamp;
-    mesh.scale.set(pulse, pulse, 1);
-    mesh.position.y = PORTAL_Y + Math.sin(t * 0.5 + ud.bobOffset) * 0.12 * motionDamp;
-    mesh.material.opacity = ud.locked ? 0.6 : 0.9 + 0.1 * wave * motionDamp;
+  // portal planets turn slowly on their axis; a locked one gets a brief
+  // swell when clicked, so the click reads as heard rather than ignored
+  Object.values(portals).forEach((portal) => {
+    if (!portal.group.visible) return;
+    portal.body.rotation.y += portal.spin * motionDamp;
 
-    if (ud.nudgeStart) {
-      const e = (performance.now() - ud.nudgeStart) / 380;
-      // shake along the ring's tangent at this portal's angle
-      const k = e >= 1 ? 0 : Math.sin(e * Math.PI * 4) * (1 - e) * 0.2;
-      if (e >= 1) ud.nudgeStart = 0;
-      mesh.position.x = ud.baseX + Math.cos(ud.angle) * k;
-      mesh.position.z = ud.baseZ - Math.sin(ud.angle) * k;
+    let swell = 1;
+    if (portal.nudgeStart) {
+      const e = (performance.now() - portal.nudgeStart) / 420;
+      if (e >= 1) portal.nudgeStart = 0;
+      else swell = 1 + Math.sin(e * Math.PI) * 0.07;
     }
+    portal.group.scale.setScalar(swell);
   });
 
   // twinkle + drift floating lights

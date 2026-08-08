@@ -129,12 +129,32 @@ planet. Anything counting what's *on screen* must use `scene.js`'s `renderedStar
 not `memories.length`.
 
 Navigating between planets (Phase 4) goes through `scene.js`'s `showPlanet(index)`, which
-rebuilds the ring's meshes and leaves `memories` alone. Two portal meshes at ±100° sit in
-their own `portalGroup`, outside `cardGroup`, so ring slot indexing and
-`renderedStarCount()` keep counting stars only; the `pointerup` raycast tests both groups
-and routes portal hits to `setOnPortalClick`'s callback (wired up in `galaxyPicker.js`,
-which owns the hyperspace transition). A "next" portal with no successor planet renders
-locked and does nothing but twitch when clicked.
+rebuilds the ring's meshes and leaves `memories` alone. The two portals are whole worlds
+hanging 26 units out at ±100° and ~20° of elevation — a lit `MeshLambertMaterial` sphere,
+an atmosphere shell, and a caption plate beside it — each a `THREE.Group` under
+`portalGroup`, outside `cardGroup`, so ring slot indexing and `renderedStarCount()` keep
+counting stars only. The `pointerup` raycast collects the visible portals' sphere and
+caption meshes alongside `cardGroup.children` and routes portal hits to
+`setOnPortalClick`'s callback (wired up in `galaxyPicker.js`, which owns the hyperspace
+transition). A "next" portal with no successor planet renders as a grey, padlocked ghost
+of a world and does nothing but swell when clicked.
+
+Two things about the portals are load-bearing and easy to undo by accident. Their light is
+a `PointLight` above the viewer, not a directional one: both portals hang off to the
+sides, and any single direction leaves one of them a black disc. And the caption sits
+*beside* its planet because it doesn't fit above or below — the clear sky between the top
+row of stars (~13.7° elevation) and the top of the 55° FOV (27.5°) is only ~14° tall, and
+the planet nearly fills it; above puts the caption off-screen, below puts it behind the
+card ring.
+
+Ring layout (`ringSlot`/`applyRingLayout` in `scene.js`) is a function of how many stars
+are in the ring, not of arrival order, so everything is re-spaced whenever that count
+changes — adding closes ranks, deleting closes the gap. One row at eye level up to
+`ROW_CAPACITY` (18), two rows past that sharing a single angular step so stars line up in
+columns. `MAX_ANGULAR_STEP` (26°) stops a part-full planet from going hollow: below it the
+ring closes into a full circle, above it the stars form an arc centred on where you're
+facing. Don't reintroduce a fixed per-index slot grid — the old one put levels 0 and 2 on
+the same angles 1.6 apart with cards 1.8 tall, so they always overlapped.
 
 Because the server decides which planet a new star lands on, `memoryForm.js` waits for
 `POST /api/memories` to answer before drawing anything: `scene.js`'s `placeNewStar()`

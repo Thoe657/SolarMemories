@@ -123,11 +123,13 @@ export function formatDate(dateStr) {
 }
 
 /* ============================================================
-   PLANET PORTAL TEXTURE — the ring-edge marker for travelling to a
-   galaxy's next/previous planet. A locked portal (a "next planet"
-   that doesn't exist yet, because the active one still has room) is
-   drawn dashed and greyed instead of glowing, so the ring reads as
-   continuing rather than simply ending.
+   PLANET PORTALS — a galaxy's next/previous planet, shown as an
+   actual world hanging far off in the distance rather than a marker
+   on the ring. Two textures make one up: an equirectangular surface
+   wrapped on a sphere, and a flat caption plate that floats above it.
+   A "next planet" that doesn't exist yet (the active one still has
+   room) gets the greyed-out surface and a padlock on its plate, so
+   the sky reads as continuing rather than simply ending.
 ============================================================ */
 const LOCKED_TINT = [141, 131, 151];
 
@@ -138,57 +140,51 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-export function makePortalTexture({ direction, caption, label, locked, color = '#ffd9a0' }) {
-  const S = 512;
+// Banded, gas-giant-ish surface in the galaxy's accent colour. Equirectangular
+// (2:1) so it wraps a SphereGeometry without a visible seam at the poles.
+export function makePlanetSurfaceTexture({ color = '#ffd9a0', locked = false }) {
+  const W = 1024, H = 512;
   const canvas = document.createElement('canvas');
-  canvas.width = S; canvas.height = S;
+  canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
 
-  const cx = S / 2;
-  const cy = S / 2 - 40; // leaves room for the caption/label under the ring
-  const R = 128;
   const [r, g, b] = locked ? LOCKED_TINT : hexToRgb(color);
-  const tint = (a) => `rgba(${r}, ${g}, ${b}, ${a})`;
+  const shade = (t, a = 1) => `rgba(${Math.min(255, Math.round(r * t))}, ${Math.min(255, Math.round(g * t))}, ${Math.min(255, Math.round(b * t))}, ${a})`;
 
-  // soft glow behind the ring
-  const glow = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.7);
-  glow.addColorStop(0, tint(locked ? 0.08 : 0.32));
-  glow.addColorStop(0.55, tint(locked ? 0.03 : 0.12));
-  glow.addColorStop(1, tint(0));
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, S, S);
+  // base: poles a shade deeper than the equator
+  const base = ctx.createLinearGradient(0, 0, 0, H);
+  base.addColorStop(0, shade(locked ? 0.5 : 0.34));
+  base.addColorStop(0.5, shade(locked ? 0.85 : 0.92));
+  base.addColorStop(1, shade(locked ? 0.45 : 0.3));
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, W, H);
 
-  // the portal ring — solid when you can travel through it, dashed when locked
-  ctx.strokeStyle = tint(locked ? 0.5 : 0.95);
-  ctx.lineWidth = locked ? 7 : 10;
-  if (locked) ctx.setLineDash([18, 15]);
-  ctx.beginPath();
-  ctx.arc(cx, cy, R, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.strokeStyle = tint(locked ? 0.16 : 0.42);
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(cx, cy, R - 24, 0, Math.PI * 2);
-  ctx.stroke();
-
-  if (locked) {
-    drawPortalLock(ctx, cx, cy, tint);
-  } else {
-    drawPortalChevron(ctx, cx, cy, direction, tint);
+  // latitude bands
+  for (let y = 0; y < H;) {
+    const h = 7 + Math.random() * 44;
+    ctx.fillStyle = shade(0.5 + Math.random() * 0.55, 0.22 + Math.random() * 0.28);
+    ctx.fillRect(0, y, W, h);
+    y += h;
   }
 
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-
-  ctx.fillStyle = tint(locked ? 0.5 : 0.75);
-  ctx.font = '600 26px "Quicksand", sans-serif';
-  ctx.fillText(caption, cx, cy + R + 60);
-
-  ctx.fillStyle = locked ? tint(0.6) : `rgba(255, 238, 194, 0.95)`;
-  ctx.font = '600 44px "Comic Sans MS", "Caveat", cursive, sans-serif';
-  wrapText(ctx, label, cx, cy + R + 112, S - 60, 48);
+  // a few soft storm spots, kept off the poles where the wrap pinches
+  for (let i = 0; i < 7; i++) {
+    const sx = Math.random() * W;
+    const sy = H * (0.22 + Math.random() * 0.56);
+    const rx = 34 + Math.random() * 86;
+    const spot = ctx.createRadialGradient(sx, sy, 0, sx, sy, rx);
+    spot.addColorStop(0, shade(1.2, 0.32));
+    spot.addColorStop(1, shade(1.2, 0));
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(1, 0.4 + Math.random() * 0.3);
+    ctx.translate(-sx, -sy);
+    ctx.fillStyle = spot;
+    ctx.beginPath();
+    ctx.arc(sx, sy, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -196,37 +192,43 @@ export function makePortalTexture({ direction, caption, label, locked, color = '
   return tex;
 }
 
-// Double chevron pointing the way you'd travel: right for the next planet,
-// left for the previous one.
-function drawPortalChevron(ctx, cx, cy, direction, tint) {
-  const dir = direction === 'prev' ? -1 : 1;
-  ctx.strokeStyle = tint(0.9);
-  ctx.lineWidth = 12;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  [-26, 20].forEach((offset, i) => {
-    ctx.globalAlpha = i === 0 ? 1 : 0.5;
-    const x = cx + dir * offset;
-    ctx.beginPath();
-    ctx.moveTo(x - dir * 22, cy - 30);
-    ctx.lineTo(x + dir * 22, cy);
-    ctx.lineTo(x - dir * 22, cy + 30);
-    ctx.stroke();
-  });
-  ctx.globalAlpha = 1;
+// The caption plate floating above a portal planet: "next planet" over the
+// planet's name, or a padlock over "not formed yet" when it's locked.
+export function makePortalLabelTexture({ caption, label, locked }) {
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const cx = W / 2;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+
+  if (locked) drawPortalLock(ctx, cx, 44);
+
+  ctx.fillStyle = locked ? 'rgba(200, 192, 210, 0.6)' : 'rgba(255, 217, 160, 0.8)';
+  ctx.font = '600 28px "Quicksand", sans-serif';
+  ctx.fillText(caption, cx, locked ? 128 : 96);
+
+  ctx.fillStyle = locked ? 'rgba(200, 192, 210, 0.7)' : 'rgba(255, 245, 225, 0.98)';
+  ctx.font = '600 52px "Comic Sans MS", "Caveat", cursive, sans-serif';
+  wrapText(ctx, label, cx, locked ? 190 : 162, W - 50, 56);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
 }
 
-function drawPortalLock(ctx, cx, cy, tint) {
-  ctx.strokeStyle = tint(0.75);
-  ctx.lineWidth = 10;
+function drawPortalLock(ctx, cx, cy) {
+  ctx.strokeStyle = 'rgba(200, 192, 210, 0.7)';
+  ctx.lineWidth = 7;
   ctx.lineCap = 'round';
-  // shackle
   ctx.beginPath();
-  ctx.arc(cx, cy - 12, 24, Math.PI, 0);
+  ctx.arc(cx, cy, 15, Math.PI, 0); // shackle
   ctx.stroke();
-  // body
-  ctx.fillStyle = tint(0.55);
-  roundRect(ctx, cx - 36, cy - 12, 72, 56, 10);
+  ctx.fillStyle = 'rgba(200, 192, 210, 0.5)';
+  roundRect(ctx, cx - 23, cy, 46, 34, 7); // body
   ctx.fill();
 }
 
