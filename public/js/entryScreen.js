@@ -7,8 +7,6 @@
    interaction gate layered on top of the planet picker, which
    keeps initializing underneath exactly as it always has.
 ============================================================ */
-import { initAudio } from './audioManager.js';
-
 const entryScreen = document.getElementById('entryScreen');
 const canvas = document.getElementById('entryScreenCanvas');
 const ctx = canvas.getContext('2d');
@@ -62,8 +60,6 @@ function enter() {
   running = false;
   if (animId) cancelAnimationFrame(animId);
   window.removeEventListener('resize', resize);
-
-  initAudio(); // valid user gesture — safe to start ambient audio here
 
   entryScreen.classList.add('fading');
   // matches the .overlay fade timing (~500-700ms) elsewhere in the app

@@ -6,7 +6,7 @@ import { createPlanetRemote, deletePlanetRemote, loadTrashedMemories, restoreMem
 import { showStorageWarning } from './util.js';
 import { clearGalleryScene, loadPlanetMemories, showLoadingPlaceholders, setOnPortalClick, showMoon } from './scene.js';
 import { currentPlanet, planetsCache, setCurrentPlanet, setPlanetsCache } from './state.js';
-import { playUiSound, prefersReducedMotion } from './audioManager.js';
+import { prefersReducedMotion } from './motionPreference.js';
 
 /* ============================================================
    PLANET PICKER — twinkling background stars
@@ -392,7 +392,6 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
 
 // Enter a planet: hyperspace transition, then swap content underneath.
 async function selectPlanet(planet) {
-  playUiSound('select');
   setCurrentPlanet(planet);
 
   await playHyperspace(() => {

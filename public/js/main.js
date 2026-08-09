@@ -8,24 +8,6 @@ import './memoryForm.js';
 import './entryScreen.js';
 import './cardFlip.js';
 import { storageMode, setStorageMode, setPlanetsCache } from './state.js';
-import { isQuietMode, setQuietMode } from './audioManager.js';
-
-/* ============================================================
-   QUIET MODE TOGGLE
-============================================================ */
-const quietModeBtn = document.getElementById('quietModeBtn');
-
-function syncQuietModeBtn(quiet) {
-  quietModeBtn.classList.toggle('active', quiet);
-  quietModeBtn.setAttribute('aria-pressed', String(quiet));
-  quietModeBtn.setAttribute('aria-label', quiet ? 'Turn quiet mode off' : 'Turn quiet mode on');
-}
-syncQuietModeBtn(isQuietMode());
-
-quietModeBtn.addEventListener('click', () => {
-  setQuietMode(!isQuietMode());
-  syncQuietModeBtn(isQuietMode());
-});
 
 /* ============================================================
    BACKUP

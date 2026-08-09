@@ -9,7 +9,6 @@ import { escapeHtml, showStorageWarning } from './util.js';
 import { formatDate, makeCardBackTexture } from './cards.js';
 import { removeMemoryFromScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount } from './scene.js';
 import { memories } from './state.js';
-import { playUiSound } from './audioManager.js';
 
 const panel = document.getElementById('cardFlipPanel');
 
@@ -200,7 +199,6 @@ async function deleteMemoryAndClose(memory) {
 async function openCard(memory, mesh) {
   if (state !== 'idle') return; // re-entry guard
   state = 'opening';
-  playUiSound('flip');
 
   const rect = getMeshScreenRect(mesh);
   flippedMesh = mesh;

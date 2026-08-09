@@ -93,7 +93,7 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
 
 ### Frontend (`public/`)
 `public/js/main.js` is the module entrypoint (imported via `<script type="module">`),
-wiring the others together, calling `init()`, and wiring the quiet-mode toggle. Modules:
+wiring the others together and calling `init()`. Modules:
 `state.js` (shared mutable app state — `memories`, `currentPlanet*`, `storageMode`,
 `planetsCache`, `currentMoons`/`currentMoonIndex` — with setters since ES module
 bindings can only be reassigned by their own module), `util.js` (`escapeHtml`,
@@ -107,12 +107,13 @@ frame-time benchmark — see below), `planetPicker.js`
 (solar system rendering, hyperspace transition, new/edit-planet forms, starfield
 parallax + shooting stars), `memoryForm.js` (add-memory form, photo/audio
 compression), `entryScreen.js` (one-time nebula start screen, 2D canvas, gates the
-already-initializing picker, starts ambient audio on Enter — a valid user gesture),
-`cardFlip.js` (click a card → it flips in 3D, then a DOM panel fades in with the full
-content, replacing the old disconnected read-overlay modal), `audioManager.js`
-(looping Web Audio ambient pad + short UI blips, quiet-mode toggle persisted via
-`localStorage`, and the shared `shouldDampenMotion()`/`prefersReducedMotion()` reads
-that `scene.js` uses to slow ambient animation and force low quality respectively).
+already-initializing picker), `cardFlip.js` (click a card → it flips in 3D, then a DOM
+panel fades in with the full content, replacing the old disconnected read-overlay
+modal), `motionPreference.js` (the sole remaining export, `prefersReducedMotion()`,
+reads the OS-level `prefers-reduced-motion` media query — `scene.js` uses it to slow
+ambient animation and force low quality, `planetPicker.js` to pick the shorter
+hyperspace preset; there is no in-app audio or quiet-mode toggle — removed entirely
+since it didn't fit the app's feel).
 
 Two perf/asset notes:
 - `scene.js` caches each memory's generated `CanvasTexture` in an in-memory

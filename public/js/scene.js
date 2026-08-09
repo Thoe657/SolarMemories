@@ -14,7 +14,7 @@ import {
   setCurrentMoons,
   setCurrentMoonIndex
 } from './state.js';
-import { shouldDampenMotion, prefersReducedMotion, playUiSound } from './audioManager.js';
+import { prefersReducedMotion } from './motionPreference.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -614,11 +614,9 @@ export function setOnPortalClick(fn) {
 function handlePortalClick(portal) {
   if (portal.locked) {
     // Nothing to travel to yet — acknowledge the click instead of ignoring it.
-    playUiSound('locked');
     portal.nudgeStart = performance.now();
     return;
   }
-  playUiSound('select');
   if (onPortalClick) onPortalClick(portal.targetIndex);
 }
 
@@ -848,9 +846,9 @@ function animate(now = 0) {
   pitch += (targetPitch - pitch) * 0.08;
   updateCameraFromAngles();
 
-  // Quiet mode (or OS-level prefers-reduced-motion) slows/pauses the
-  // ambient drift animations below — 1 is full motion, near-0 is nearly still.
-  const motionDamp = shouldDampenMotion() ? 0.12 : 1;
+  // OS-level prefers-reduced-motion slows/pauses the ambient drift
+  // animations below — 1 is full motion, near-0 is nearly still.
+  const motionDamp = prefersReducedMotion() ? 0.12 : 1;
 
   // gentle bob/sway for cards, rotation stays anchored to face the viewer.
   // Skip any card cardFlip.js is currently animating/holding open, so the
