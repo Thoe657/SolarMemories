@@ -225,10 +225,9 @@ function applyRingLayout() {
    TEXTURE CACHE — in-memory Map<memoryId, CanvasTexture>, scoped to
    this page session. Re-entering a previously visited planet skips
    regenerating (canvas-drawing) unchanged memories' textures.
-   NOTE: memory content editing isn't supported yet (Phase 6's
-   relatedIds don't affect the visual texture), so cache invalidation
-   is a non-issue for now — this cache MUST be invalidated (or have
-   the relevant entry deleted) if memory-content editing is ever added.
+   NOTE (Phase 7): memory editing evicts the relevant entry via
+   updateMemoryInScene() below, so a cache hit always reflects the
+   memory's current saved content.
 ============================================================ */
 const textureCache = new Map();
 
@@ -282,6 +281,28 @@ export function addMemoryToScene(memory) {
   applyRingLayout();
 
   document.getElementById('emptyHint').classList.add('hidden');
+}
+
+// Regenerates a memory's card texture in place after an edit (title, text,
+// photo, audio, milestone, and relatedIds can all change what the card
+// looks like -- e.g. the milestone star cutout from Phase 6) and swaps it
+// onto the existing mesh, without touching ring position/index (content and
+// layout are unrelated). Evicts the stale cache entry first: cacheTexture()
+// always marks a texture cached, so getCachedTexture() must not keep
+// returning the pre-edit drawing on a later re-render of this moon.
+export function updateMemoryInScene(memory) {
+  textureCache.delete(memory.id);
+  if (!memory.mesh) return; // edited memory isn't on the viewed moon right now -- nothing to redraw
+  const newTex = makePolaroidTexture(memory);
+  // The old map was this memory's sole reference in the (now-evicted) cache
+  // entry, so it's safe to dispose outright here, unlike disposeCardMesh's
+  // conditional dispose (which must NOT dispose a still-cached texture that
+  // other code may still be pointing at).
+  memory.mesh.material.map?.dispose();
+  memory.mesh.material.map = newTex;
+  memory.mesh.material.needsUpdate = true;
+  memory.mesh.userData.memory = memory;
+  cacheTexture(memory.id, newTex);
 }
 
 /* ============================================================

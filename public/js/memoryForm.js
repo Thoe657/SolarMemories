@@ -1,10 +1,10 @@
 /* ============================================================
    UI: ADD MEMORY FORM — form logic, photo compression
 ============================================================ */
-import { addMemoryToScene, placeNewStar } from './scene.js';
+import { addMemoryToScene, placeNewStar, updateMemoryInScene } from './scene.js';
 import { persistMemory } from './api.js';
 import { showStorageWarning, showToast } from './util.js';
-import { memories, currentPlanetId, storageMode } from './state.js';
+import { memories, currentPlanetId, storageMode, updateMemoryInState } from './state.js';
 
 const addOverlay = document.getElementById('addOverlay');
 const openAddBtn = document.getElementById('openAddBtn');
@@ -34,6 +34,16 @@ let pendingPhotoDataUrl = null;
 let pendingPhotoImg = null;
 let pendingAudioDataUrl = null;
 let pendingRelatedIds = [];
+// Set while editing an existing memory (the id being edited); null in
+// "add a new memory" mode. Drives both the save handler (upsert by this id
+// instead of minting a new one) and the form's pre-fill on open.
+let editingMemoryId = null;
+
+const addOverlayHeading = document.querySelector('#addOverlay h2');
+const addOverlaySub = document.querySelector('#addOverlay .sub');
+const ADD_HEADING = addOverlayHeading.textContent;
+const ADD_SUB = addOverlaySub.textContent;
+const ADD_SAVE_LABEL = saveMemBtn.textContent;
 
 const typeLabels = {
   photo: 'caption',
@@ -287,7 +297,43 @@ function validateForm() {
 memTitle.addEventListener('input', validateForm);
 memText.addEventListener('input', validateForm);
 
-function openAddForm() {
+// Optional `memory` arg switches the form into edit mode: pre-fills every
+// field from the passed memory (instead of the blank/reset state) and the
+// save handler below reuses its id rather than minting a new one.
+function openAddForm(memory) {
+  if (memory) {
+    editingMemoryId = memory.id;
+    memTitle.value = memory.title || '';
+    memDate.value = memory.date || '';
+    memText.value = memory.text || '';
+    memMilestone.checked = !!memory.milestone;
+    pendingPhotoDataUrl = memory.photoData || null;
+    pendingPhotoImg = memory.photoImg || null;
+    pendingAudioDataUrl = memory.audioData || null;
+    pendingRelatedIds = (memory.relatedIds || []).map(String);
+    relatedSearch.value = '';
+    relatedResults.style.display = 'none';
+    relatedResults.innerHTML = '';
+    renderRelatedChips();
+
+    photoPreview.src = pendingPhotoDataUrl || '';
+    photoPreview.style.display = pendingPhotoDataUrl ? 'block' : 'none';
+    photoDrop.textContent = pendingPhotoDataUrl ? 'photo attached — click to replace' : 'click to choose a photo';
+    photoDrop.classList.toggle('has-file', !!pendingPhotoDataUrl);
+
+    audioPreview.src = pendingAudioDataUrl || '';
+    audioPreview.style.display = pendingAudioDataUrl ? 'block' : 'none';
+    audioDrop.textContent = pendingAudioDataUrl ? 'audio attached — click to replace' : 'click to choose an audio file';
+    audioDrop.classList.toggle('has-file', !!pendingAudioDataUrl);
+
+    setType(memory.type || 'photo');
+    addOverlayHeading.textContent = 'edit memory';
+    addOverlaySub.textContent = 'what would you like to change?';
+    saveMemBtn.textContent = 'save changes';
+    validateForm();
+  } else {
+    resetForm();
+  }
   addOverlay.classList.add('visible');
 }
 function closeAddForm() {
@@ -295,6 +341,7 @@ function closeAddForm() {
   resetForm();
 }
 function resetForm() {
+  editingMemoryId = null;
   memTitle.value = '';
   memText.value = '';
   memDate.value = '';
@@ -315,16 +362,53 @@ function resetForm() {
   audioPreview.src = '';
   audioDrop.textContent = 'click to choose an audio file';
   audioDrop.classList.remove('has-file');
+  addOverlayHeading.textContent = ADD_HEADING;
+  addOverlaySub.textContent = ADD_SUB;
+  saveMemBtn.textContent = ADD_SAVE_LABEL;
   setType('photo');
 }
 
-openAddBtn.addEventListener('click', openAddForm);
+openAddBtn.addEventListener('click', () => openAddForm());
 cancelAddBtn.addEventListener('click', closeAddForm);
 addOverlay.addEventListener('click', (e) => {
   if (e.target === addOverlay) closeAddForm();
 });
 
 saveMemBtn.addEventListener('click', async () => {
+  if (editingMemoryId != null) {
+    const memory = {
+      id: editingMemoryId,
+      type: currentType,
+      title: memTitle.value.trim(),
+      date: memDate.value,
+      text: memText.value.trim(),
+      photoData: pendingPhotoDataUrl,
+      photoImg: pendingPhotoImg,
+      audioData: pendingAudioDataUrl,
+      milestone: memMilestone.checked,
+      relatedIds: pendingRelatedIds.slice()
+    };
+    closeAddForm();
+    // POST /api/memories upserts by id and preserves createdAt/moonId for an
+    // id that already exists (src/routes/memories.js), so this reuses the
+    // exact same save path as a new memory -- no separate edit endpoint.
+    try {
+      await persistMemory(memory, currentPlanetId);
+      const updated = updateMemoryInState(memory);
+      if (updated) updateMemoryInScene(updated);
+    } catch (e) {
+      console.warn('Could not save memory edit', e);
+      // Unlike a new memory, don't show the edit optimistically here: the
+      // ring already shows the last-saved version, which is a safer thing
+      // to leave visible than an edit that may not have persisted.
+      const msg = storageMode === 'remote'
+        ? `couldn't save your changes to the gallery server (${e.message || 'connection error'}) — try again.`
+        : 'couldn\'t save your changes — try connecting a folder for more reliable storage.';
+      showStorageWarning(msg);
+    }
+    return;
+  }
+
   const memory = {
     id: Date.now(),
     type: currentType,
@@ -362,3 +446,5 @@ saveMemBtn.addEventListener('click', async () => {
 });
 
 setType('photo');
+
+export { openAddForm };

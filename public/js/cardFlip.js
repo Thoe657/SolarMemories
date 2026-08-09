@@ -9,6 +9,7 @@ import { escapeHtml, showStorageWarning } from './util.js';
 import { formatDate, makeCardBackTexture } from './cards.js';
 import { removeMemoryFromScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount } from './scene.js';
 import { memories } from './state.js';
+import { openAddForm } from './memoryForm.js';
 
 const panel = document.getElementById('cardFlipPanel');
 
@@ -136,6 +137,7 @@ function renderContent(memory) {
   }
   html += renderRelatedMemoriesHtml(memory);
   html += `<button class="read-close" id="closeReadBtn">close</button>`;
+  html += `<button class="read-close" id="editMemBtn">edit</button>`;
   html += `<button class="read-delete" id="deleteMemBtn">delete this memory</button>`;
   html += `<div class="confirm-row hidden" id="deleteConfirmRow" style="display:none;">
     <button class="btn btn-secondary" id="cancelDeleteBtn">keep it</button>
@@ -145,6 +147,13 @@ function renderContent(memory) {
   panel.innerHTML = html;
 
   document.getElementById('closeReadBtn').addEventListener('click', closeCard);
+
+  document.getElementById('editMemBtn').addEventListener('click', () => {
+    // Capture `memory` (this renderContent() call's closure param) rather
+    // than reading the module-level `displayedMemory` after closeCard()
+    // resolves -- closeCard() nulls that out as part of closing.
+    closeCard().then(() => openAddForm(memory));
+  });
 
   panel.querySelectorAll('.related-memory-chip').forEach((chip) => {
     chip.addEventListener('click', () => {

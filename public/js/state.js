@@ -41,3 +41,27 @@ export function setCurrentMoons(list) {
 export function setCurrentMoonIndex(index) {
   currentMoonIndex = index;
 }
+
+// Applies an edit's content fields onto the matching entry in `memories`,
+// in place (mutating the existing object rather than replacing it at its
+// array index) -- so every other live reference to it (a rendered mesh's
+// userData.memory, another memory's relatedIds chip lookup, the
+// relatedSearch picker's results) picks up the change immediately, with no
+// re-fetch. `id`/`moonId` are deliberately left untouched: an edit must
+// never move a memory to a different moon. Returns the updated entry, or
+// null if it isn't currently loaded (shouldn't happen -- edits only ever
+// target a memory already in `memories`).
+export function updateMemoryInState(edited) {
+  const existing = memories.find((m) => String(m.id) === String(edited.id));
+  if (!existing) return null;
+  existing.type = edited.type;
+  existing.title = edited.title;
+  existing.date = edited.date;
+  existing.text = edited.text;
+  existing.photoData = edited.photoData;
+  existing.photoImg = edited.photoImg;
+  existing.audioData = edited.audioData;
+  existing.milestone = edited.milestone;
+  existing.relatedIds = edited.relatedIds;
+  return existing;
+}
