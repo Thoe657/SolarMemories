@@ -79,6 +79,10 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
       <span class="label">back up</span>
     </button>
+    <button class="add-btn" id="restoreBackupBtn" aria-label="Restore from a backup">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9m0 0-4 4m4-4 4 4M4 7V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2"/></svg>
+      <span class="label">restore</span>
+    </button>
     <button class="add-btn" id="backToPlanetsBtn" aria-label="Back to planets">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       <span class="label">planets</span>
@@ -95,6 +99,22 @@
 </div>
 
 <div class="toast" id="backupToast"></div>
+
+<!-- Restore Backup Overlay (Phase 8) -->
+<div class="overlay" id="backupOverlay">
+  <div class="panel">
+    <h2>restore from backup</h2>
+    <p class="sub">Restoring replaces everything with that backup's data — anything saved since then is lost. A safety copy of what's here now is made automatically first.</p>
+
+    <div class="field-group">
+      <div class="trash-list" id="backupList"></div>
+    </div>
+
+    <div class="panel-actions">
+      <button class="btn btn-secondary" id="closeBackupOverlayBtn">close</button>
+    </div>
+  </div>
+</div>
 
 <!-- Edit Planet Overlay -->
 <div class="overlay" id="editPlanetOverlay">

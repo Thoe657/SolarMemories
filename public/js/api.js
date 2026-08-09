@@ -154,3 +154,25 @@ export async function createBackupRemote() {
   }
   return resp.json();
 }
+
+// Available backups, newest first (each { filename, mtime }).
+export async function listBackupsRemote() {
+  const resp = await fetch('/api/backup');
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.error || `load failed (${resp.status})`);
+  }
+  const body = await resp.json();
+  return body.backups || [];
+}
+
+export async function restoreBackupRemote(filename) {
+  const resp = await fetch(`/api/backup/${encodeURIComponent(filename)}/restore`, {
+    method: 'POST'
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.error || `restore failed (${resp.status})`);
+  }
+  return resp.json().catch(() => ({}));
+}
