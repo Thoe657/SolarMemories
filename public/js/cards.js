@@ -9,46 +9,38 @@ export function makePolaroidTexture(memory) {
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
 
+  // Milestone memories get an alpha-masked star silhouette instead of the
+  // rounded-rect polaroid (see drawMilestoneStarCard below); everything else
+  // is the plain layout, unchanged from before this branch existed.
+  if (memory.milestone) {
+    drawMilestoneStarCard(ctx, memory, W, H);
+  } else {
+    drawPlainPolaroid(ctx, memory, W, H);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+// Today's plain polaroid: paper rounded-rect, hairline border, rectangular
+// photo/placeholder block, handwritten-ish caption + date. Pulled out
+// unchanged so makePolaroidTexture can branch to the star variant above
+// without altering this path at all.
+function drawPlainPolaroid(ctx, memory, W, H) {
   // paper background
   ctx.fillStyle = '#fffaf0';
   roundRect(ctx, 0, 0, W, H, 14);
   ctx.fill();
 
-  // border: plain by default, gold-toned + thicker for milestone memories
-  if (memory.milestone) {
-    ctx.strokeStyle = '#c99a2e';
-    ctx.lineWidth = 8;
-    roundRect(ctx, 4, 4, W-8, H-8, 14);
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(255, 217, 160, 0.6)';
-    ctx.lineWidth = 2;
-    roundRect(ctx, 9, 9, W-18, H-18, 12);
-    ctx.stroke();
-  } else {
-    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
-    ctx.lineWidth = 2;
-    roundRect(ctx, 1, 1, W-2, H-2, 14);
-    ctx.stroke();
-  }
+  ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+  ctx.lineWidth = 2;
+  roundRect(ctx, 1, 1, W-2, H-2, 14);
+  ctx.stroke();
 
   const photoArea = { x: 24, y: 24, w: W - 48, h: 400 };
-
-  if (memory.type === 'photo' && memory.photoImg) {
-    drawCover(ctx, memory.photoImg, photoArea.x, photoArea.y, photoArea.w, photoArea.h);
-  } else {
-    // colored placeholder block based on type
-    const colors = { letter: '#ece1f5', audio: '#dceee6' };
-    ctx.fillStyle = colors[memory.type] || '#ece1f5';
-    ctx.fillRect(photoArea.x, photoArea.y, photoArea.w, photoArea.h);
-
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.font = '60px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const icon = memory.type === 'audio' ? '♪' : '✉';
-    ctx.fillText(icon, photoArea.x + photoArea.w/2, photoArea.y + photoArea.h/2);
-  }
+  drawPhotoOrPlaceholder(ctx, memory, photoArea);
 
   // caption area: title in handwritten-ish font + date
   ctx.fillStyle = '#4a3b2a';
@@ -62,11 +54,137 @@ export function makePolaroidTexture(memory) {
   if (memory.date) {
     ctx.fillText(formatDate(memory.date), W/2, H - 28);
   }
+}
 
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
+// Rectangular photo/placeholder block shared by the plain layout.
+function drawPhotoOrPlaceholder(ctx, memory, area) {
+  if (memory.type === 'photo' && memory.photoImg) {
+    drawCover(ctx, memory.photoImg, area.x, area.y, area.w, area.h);
+  } else {
+    // colored placeholder block based on type
+    const colors = { letter: '#ece1f5', audio: '#dceee6' };
+    ctx.fillStyle = colors[memory.type] || '#ece1f5';
+    ctx.fillRect(area.x, area.y, area.w, area.h);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.font = '60px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const icon = memory.type === 'audio' ? '♪' : '✉';
+    ctx.fillText(icon, area.x + area.w/2, area.y + area.h/2);
+  }
+}
+
+// Circular photo/placeholder inset used by the milestone star card, where
+// content has to stay near the shape's centre to avoid the star's points.
+function drawCircularPhotoOrPlaceholder(ctx, memory, cx, cy, r) {
+  if (memory.type === 'photo' && memory.photoImg) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    drawCover(ctx, memory.photoImg, cx - r, cy - r, r * 2, r * 2);
+    ctx.restore();
+  } else {
+    const colors = { letter: '#ece1f5', audio: '#dceee6' };
+    ctx.fillStyle = colors[memory.type] || '#ece1f5';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.font = '52px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const icon = memory.type === 'audio' ? '♪' : '✉';
+    ctx.fillText(icon, cx, cy);
+  }
+}
+
+// Builds a 5-point star outline as a Path2D, with the x/y radii scaled
+// independently so it can fill a non-square canvas cleanly. Points start
+// straight up and proceed clockwise, alternating outer (tip) and inner
+// (notch) vertices every 36 degrees (10 vertices total).
+function buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy) {
+  const path = new Path2D();
+  const step = Math.PI / 5;
+  for (let i = 0; i < 10; i++) {
+    const angle = -Math.PI / 2 + i * step;
+    const rx = i % 2 === 0 ? outerRx : innerRx;
+    const ry = i % 2 === 0 ? outerRy : innerRy;
+    const x = cx + rx * Math.cos(angle);
+    const y = cy + ry * Math.sin(angle);
+    if (i === 0) path.moveTo(x, y); else path.lineTo(x, y);
+  }
+  path.closePath();
+  return path;
+}
+
+// Milestone memories' card: the paper, photo and caption are all clipped to
+// a 5-point star Path2D (destination content simply isn't drawn outside it,
+// same idea as `ctx.clip()` + `destination-in` -- the canvas starts fully
+// transparent, so "not drawn" already means "alpha 0"). The result is that
+// the whole texture's opaque region *is* the star silhouette -- replacing
+// the old gold-double-border signal rather than layering under it. The
+// plane geometry/material this gets mapped onto in scene.js is untouched
+// (still the same 512:600 rect, still raycast as a full rect), so this is
+// purely a texture-level effect per the plan's design decision.
+function drawMilestoneStarCard(ctx, memory, W, H) {
+  const cx = W / 2, cy = 300;
+  const outerRx = 232, outerRy = 272;
+  const innerRx = outerRx * 0.66, innerRy = outerRy * 0.66;
+  const star = buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy);
+
+  ctx.save();
+  ctx.fillStyle = '#fffaf0';
+  ctx.fill(star);
+  ctx.clip(star);
+
+  // warm glow behind the photo so the star reads as "lit up", not just an
+  // outline, even out toward its points where the photo doesn't reach
+  const glow = ctx.createRadialGradient(cx, cy - 20, 30, cx, cy - 20, outerRy);
+  glow.addColorStop(0, 'rgba(255, 221, 150, 0.55)');
+  glow.addColorStop(1, 'rgba(255, 221, 150, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // photo/placeholder as a circular medallion near the star's centre --
+  // kept inside the star's "safe" inner pentagon so it doesn't get chewed
+  // up by the points/notches
+  const photoR = 118;
+  const photoCx = cx, photoCy = cy - 70;
+  drawCircularPhotoOrPlaceholder(ctx, memory, photoCx, photoCy, photoR);
+
+  ctx.strokeStyle = 'rgba(201, 154, 46, 0.85)';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(photoCx, photoCy, photoR, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = '#4a3b2a';
+  ctx.font = '600 32px "Comic Sans MS", "Caveat", cursive, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  wrapText(ctx, memory.title || 'untitled memory', cx, photoCy + photoR + 54, 240, 36);
+
+  ctx.fillStyle = '#8a6a24';
+  ctx.font = '500 22px "Comic Sans MS", "Caveat", cursive, sans-serif';
+  if (memory.date) {
+    ctx.fillText(formatDate(memory.date), cx, cy + innerRy - 40);
+  }
+
+  ctx.restore(); // drop the star clip so the border below draws full-width
+
+  // gold double-border, echoing the old rectangular treatment but traced
+  // along the star outline instead
+  ctx.strokeStyle = '#c99a2e';
+  ctx.lineWidth = 9;
+  ctx.stroke(star);
+
+  const innerStar = buildStarPath(cx, cy, outerRx - 10, outerRy - 10, innerRx - 6, innerRy - 6);
+  ctx.strokeStyle = 'rgba(255, 217, 160, 0.7)';
+  ctx.lineWidth = 3;
+  ctx.stroke(innerStar);
 }
 
 export function roundRect(ctx, x, y, w, h, r) {
@@ -248,6 +366,12 @@ export function makeCardBackTexture(memory) {
     ctx.lineWidth = 8;
     roundRect(ctx, 4, 4, W-8, H-8, 14);
     ctx.stroke();
+
+    // Subtle echo of the front's star silhouette, not a full shape change --
+    // the back is only seen edge-on mid-flip, so a small filled glyph reads
+    // fine without redoing this side's geometry/clip to match the front.
+    ctx.fillStyle = '#c99a2e';
+    ctx.fill(buildStarPath(W / 2, 66, 26, 26, 10, 10));
   } else {
     ctx.strokeStyle = 'rgba(0,0,0,0.04)';
     ctx.lineWidth = 2;

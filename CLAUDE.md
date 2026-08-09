@@ -45,6 +45,31 @@ npm start          # node server.js — serves the app at http://localhost:3000
   under `public/assets/backgrounds/`; only needed to change that art, not for normal
   use. Requires the `canvas` devDependency (native, not needed by `npm start`).
 
+## Verifying changes cheaply
+
+Verification cost here is dominated by **screenshots and `read_page` dumps, not by the
+server**. `npm start` is a few dozen tokens; a screenshot is a couple of thousand, and
+because it stays in the context window it is re-sent on every later turn of the session —
+so ten screenshots cost far more than ten times one. Minimise usage at all times, without
+compromising the project. In practice:
+
+- **Check once per phase, not once per edit.** Batch related changes, then verify. The
+  per-phase rule under "Development plan" is the intended cadence; don't run the app
+  after every individual edit.
+- **Reach for text before pixels.** Console messages, network requests, `curl` against an
+  API route, and server logs answer "did it throw / is the data right" for a fraction of
+  the cost. A screenshot cannot answer those questions any better.
+- **Screenshot only for genuinely visual questions**, and say so before doing it. This
+  project has a real class of bug that is invisible in a diff — the portal `PointLight`
+  and the caption-beside-the-moon constraints above exist because "the code looks right"
+  and "the moon isn't a black disc" are different questions. Ring/portal geometry, card
+  flip, hyperspace, and layout work earn one look; validator, storage, routing, and
+  data-flow changes do not.
+- **One screenshot, not a series.** If a second is genuinely needed, prefer `zoom` on the
+  region in question over another full-frame capture.
+- Prefer scoped `read_page` (`ref_id`/`depth`/`filter: interactive`) over a full tree
+  dump, for the same reason.
+
 ## Architecture
 
 Modular, no build step: backend under `src/`, frontend as native ES modules under
@@ -235,11 +260,11 @@ turning any item there into a real phase; don't treat it as pre-approved.
 PLAN_NEXT.md: memory editing, restore-from-backup UI, touch controls, inline undo
 toast; plus phases 11–12, scoped 2026-08-09 from user feedback on Phase 4's portals).
 Phases 1 (rename to "star"), 2 (moons data model, backend-only), 3 (frontend: render
-only the viewed moon), 4 (moon navigation portals), 5 (hyperspace escalation) and 11
-(terminology: galaxy → planet, [old] planet → moon, including the on-disk data) are
-done; Phase 6 (milestone star-shaped visual) and Phase 12 (moons visible in the picker)
-are next. Once all its phases are complete, fold it into PLAN_ARCHIVE.md the same way
-the previous PLAN.md was.
+only the viewed moon), 4 (moon navigation portals), 5 (hyperspace escalation), 6
+(milestone star-shaped visual) and 11 (terminology: galaxy → planet, [old] planet →
+moon, including the on-disk data) are done; Phase 12 (moons visible in the picker) is
+next. Once all its phases are complete, fold it into PLAN_ARCHIVE.md the same way the
+previous PLAN.md was.
 
 The ground rules below (applied throughout the completed plan) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets
@@ -250,6 +275,8 @@ scoped into a real plan:
 - Restate the phase's plan and file list before writing code; stop and ask if anything is
   ambiguous, especially anything touching `data/`.
 - Any phase that writes to `data/` must first copy it to `data.bak-<timestamp>/`.
-- After each phase, run `npm start`, manually exercise the affected behavior, and report
-  what was actually tested.
+- After each phase — not after each edit — run `npm start`, manually exercise the affected
+  behavior, and report what was actually tested. Do it the cheap way described under
+  "Verifying changes cheaply": text signals first, a screenshot only when the question is
+  genuinely visual.
 - If a phase's diff touches more than ~5 files outside its designated area, stop and flag it.
