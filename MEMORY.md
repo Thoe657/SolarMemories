@@ -1,25 +1,32 @@
 # Session log
 
-## 2026-08-08 — Phase 3: frontend renders only the viewed planet's stars
-Completed: Implemented Phase 3 — `loadGalaxyMemories()` fetches a galaxy's planets
-alongside its memories, opens on the oldest, and renders only that planet's stars
-(verified 28 of 35 rendering on a 2-planet test galaxy). A test seed aimed at an isolated
-`DATA_DIR` landed in the real `data/` anyway; recovered exactly from the pre-phase
-`data.bak-` copy, and the stripped test records are kept as `data.test-fixture/`.
-Decisions: `state.memories` still holds every star in the galaxy and only *rendering* is
-filtered, because `cardFlip.js`'s related-memory chips and `memoryForm.js`'s picker
-resolve ids against that array — narrowing it would have silently broken cross-planet
-links. Seed future test data from a separate checkout, never a `DATA_DIR` override, which
-didn't isolate writes despite reporting the override path at startup.
-Open issues & next steps: Ring layout is still unconfirmed by eye — the in-app browser
-pane stalled `requestAnimationFrame` again (same gotcha as the 2026-08-06 entry), so
-everything was verified by importing the live ES modules in the page console. Phase 4
-(planet-navigation portal) is next and must make the add-memory flow planet-aware:
-adding a star while viewing a non-active planet renders it in the wrong ring until reload.
-Files touched: `public/js/scene.js`, `public/js/state.js`, `public/js/api.js`,
-`public/js/cardFlip.js`, `CLAUDE.md`, `.gitignore`; `docs/PLAN.md` and
-`data.test-fixture/` (both gitignored).
-Commits: bda5d87..7a53641
+## 2026-08-09 — Phases 4/5/11: portals, hyperspace escalation, planet/moon rename
+Completed: Built Phase 4 (moon-navigation portals, rendered as distant lit planets after
+user feedback), Phase 5 (hyperspace escalation for moon-to-moon travel), and Phase 11
+(renamed galaxy→planet and old planet→moon across code, filenames, and the on-disk data,
+migrated for real against live data).
+Decisions: Sequenced Phase 11 as moon-first-then-planet at every layer — code, then the
+data migration — since the destination name ("planet") was already occupied; verified the
+full migration in an isolated `git worktree` testbed against a *copy* of real data before
+running it for real. Portal geometry (light source, caption placement) needed iteration by
+eye: settled on a `PointLight` above the viewer (a directional light left one portal a
+black disc) and captions beside rather than above/below the moon (the ~14° clear-sky band
+is too tight for both).
+Open issues & next steps: Phase 6 (milestone star shape) and Phase 12 (moons shown subtly
+in the picker, scoped from user feedback) are next, unstarted. Phase 8 (restore-from-
+backup, unstarted) will need to detect and migrate — or refuse — a pre-Phase-11-schema
+backup zip.
+Files touched: `public/js/` (scene.js, cards.js, planetPicker.js, state.js, api.js,
+memoryForm.js), `src/` (config.js, lib/validate.js, lib/moonNames.js, routes/planets.js,
+routes/memories.js), `scripts/rename-to-planets-moons.js` (new), `server.js`, `CLAUDE.md`;
+also real `data/` and `data.test-fixture/` (both gitignored) via the migration script.
+Commits: 34cce8a..c1a2676
+
+## 2026-08-08 — Phase 3: frontend renders only the viewed planet's stars (archived — see docs/MEMORY.archive.md)
+Rendered only the viewed planet's stars, verified 28/35 on a 2-planet test set; flagged a
+`DATA_DIR`-override test-seed mishap (recovered from backup). Its open issue (add-memory
+flow not planet-aware) and its `DATA_DIR` lesson are both resolved/codified as of the
+2026-08-09 entry above and CLAUDE.md's Data safety section.
 
 ## 2026-08-07 — Scoped PLAN_NEXT into PLAN.md (Phases 7-10), executed Phase 2 (planets data model)
 Completed: Scoped 4 items from docs/PLAN_NEXT.md (memory editing, restore-from-backup UI,
