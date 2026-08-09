@@ -945,6 +945,14 @@
     padding: 4px 8px;
     border-radius: 6px;
     color: var(--accent-deep);
+    /* Phase 9: text+padding alone measured ~22px tall, under the 24x24 CSS
+       px WCAG tap-target minimum -- these buttons (trash restore/delete
+       forever, and the shared-class backup-restore confirm/cancel) are
+       real, sometimes-destructive actions, so give them a guaranteed-tall
+       hit area without changing their visual padding/font. */
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
   }
 
   .trash-item-actions button:hover {
@@ -997,6 +1005,11 @@
     cursor: pointer;
     text-transform: none;
     letter-spacing: normal;
+    /* Phase 9: the label (checkbox + text) measured ~21px tall, just under
+       the 24x24 CSS px tap-target minimum -- this padding is what the
+       whole label's clickable area (not just the 16px checkbox) actually
+       gets tapped on touch. */
+    padding: 4px 0;
   }
 
   .milestone-toggle input[type="checkbox"] {
