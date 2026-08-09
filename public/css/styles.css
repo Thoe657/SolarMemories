@@ -67,9 +67,9 @@
     font-weight: 400;
   }
 
-  /* Which planet of the open galaxy is currently in the ring. Hidden for
-     single-planet galaxies, where there's nothing to disambiguate. */
-  .planet-label {
+  /* Which moon of the open planet is currently in the ring. Hidden for
+     single-moon planets, where there's nothing to disambiguate. */
+  .moon-label {
     font-size: 12px;
     color: rgba(255, 217, 160, 0.72);
     margin-top: 4px;
@@ -77,7 +77,7 @@
     letter-spacing: 0.3px;
   }
 
-  .planet-label.hidden { display: none; }
+  .moon-label.hidden { display: none; }
 
   .storage-status {
     font-size: 12px;
@@ -488,8 +488,8 @@
 
   .empty-hint.hidden { opacity: 0; }
 
-  /* ---------- Galaxy picker: solar system ---------- */
-  #galaxyPicker {
+  /* ---------- Planet picker: solar system ---------- */
+  #planetPicker {
     position: fixed;
     inset: 0;
     z-index: 1000;
@@ -501,16 +501,16 @@
     overflow: hidden;
   }
 
-  #galaxyPicker.fading {
+  #planetPicker.fading {
     opacity: 0;
     pointer-events: none;
   }
 
-  #galaxyPicker.hidden {
+  #planetPicker.hidden {
     display: none;
   }
 
-  #galaxyPicker .start-stars {
+  #planetPicker .start-stars {
     position: absolute;
     inset: 0;
     overflow: hidden;
@@ -523,7 +523,7 @@
     will-change: transform;
   }
 
-  #galaxyPicker .start-stars span {
+  #planetPicker .start-stars span {
     position: absolute;
     display: block;
     width: 2px;
@@ -602,7 +602,12 @@
     pointer-events: none;
   }
 
-  /* ----- Orbits & worlds ----- */
+  /* ----- Orbits & planets -----
+     Phase 11 note: these were `.world`/`.world-body`/`.world-label` from
+     Phase 1 through Phase 10 — "planet" meant a star-grouping back then, so
+     the picker's own planet icons borrowed "world" instead. Now that
+     star-groupings are moons, "planet" is free and these go back to their
+     natural name. */
   .orbits {
     position: absolute;
     inset: 0;
@@ -644,9 +649,9 @@
   }
 
   /* Layer 3: counter-rotates at the same speed/direction as layer 1,
-     cancelling its parent's rotation so the world + label stay upright
+     cancelling its parent's rotation so the planet + label stay upright
      while still following the circular path traced by layer 2. */
-  .world {
+  .planet {
     position: absolute;
     top: 0;
     left: 0;
@@ -661,17 +666,17 @@
     to { transform: translate(-50%, -50%) rotate(-360deg); }
   }
 
-  .world:hover .world-body {
+  .planet:hover .planet-body {
     transform: scale(1.15);
   }
 
-  .world-body {
+  .planet-body {
     border-radius: 50%;
     flex-shrink: 0;
     transition: transform 0.2s ease;
   }
 
-  .world-label {
+  .planet-label {
     position: absolute;
     top: calc(100% + 18px);
     left: 50%;
@@ -686,8 +691,8 @@
     pointer-events: none;
   }
 
-  /* "new galaxy" world: dim, dashed outline, plus icon */
-  .world.new-galaxy-world .world-body {
+  /* "new planet" planet: dim, dashed outline, plus icon */
+  .planet.new-planet .planet-body {
     background: rgba(255, 255, 255, 0.04);
     border: 1.5px dashed rgba(255, 240, 220, 0.35);
     display: flex;
@@ -696,16 +701,16 @@
     color: rgba(255, 240, 220, 0.5);
   }
 
-  .world.new-galaxy-world:hover .world-body {
+  .planet.new-planet:hover .planet-body {
     border-color: var(--light-glow);
     color: var(--light-glow);
   }
 
-  .world.new-galaxy-world .world-label {
+  .planet.new-planet .planet-label {
     color: rgba(255, 240, 220, 0.45);
   }
 
-  .new-galaxy-form {
+  .new-planet-form {
     position: fixed;
     z-index: 1010;
     top: 50%;
@@ -719,7 +724,7 @@
     box-shadow: 0 24px 50px rgba(0,0,0,0.4);
   }
 
-  .new-galaxy-form.hidden {
+  .new-planet-form.hidden {
     display: none;
   }
 
@@ -731,7 +736,7 @@
     color: var(--accent-deep);
   }
 
-  .new-galaxy-form input[type="text"] {
+  .new-planet-form input[type="text"] {
     width: 100%;
     font-family: 'Quicksand', sans-serif;
     font-size: 14px;
@@ -743,7 +748,7 @@
     margin-bottom: 14px;
   }
 
-  .new-galaxy-form input[type="text"]:focus {
+  .new-planet-form input[type="text"]:focus {
     outline: none;
     border-color: var(--accent-deep);
   }
@@ -923,7 +928,7 @@
     padding: 12px 36px;
   }
 
-  /* ---------- Trash (edit-galaxy panel) ---------- */
+  /* ---------- Trash (edit-planet panel) ---------- */
   .trash-list {
     max-height: 160px;
     overflow-y: auto;

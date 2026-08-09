@@ -10,12 +10,12 @@ function decodedDataUrlSize(dataUrl) {
   return Buffer.byteLength(base64, 'base64');
 }
 
-function validateGalaxy(body) {
+function validatePlanet(body) {
   const errors = [];
   const { id, name, accentColor, ring } = body || {};
 
   if (!id || !name || typeof name !== 'string') {
-    errors.push('invalid galaxy: id and name are required');
+    errors.push('invalid planet: id and name are required');
     return { ok: false, doc: null, errors };
   }
 
@@ -32,22 +32,22 @@ function validateGalaxy(body) {
   return { ok: true, doc, errors };
 }
 
-function validatePlanet(body) {
+function validateMoon(body) {
   const errors = [];
-  const { id, galaxyId, index, name, starCount } = body || {};
+  const { id, planetId, index, name, starCount } = body || {};
 
-  if (!id || !galaxyId || typeof galaxyId !== 'string') {
-    errors.push('invalid planet: id and galaxyId are required');
+  if (!id || !planetId || typeof planetId !== 'string') {
+    errors.push('invalid moon: id and planetId are required');
     return { ok: false, doc: null, errors };
   }
   if (!Number.isInteger(index) || index < 0) {
-    errors.push('invalid planet: index must be a non-negative integer');
+    errors.push('invalid moon: index must be a non-negative integer');
     return { ok: false, doc: null, errors };
   }
 
   const doc = {
     id: String(id),
-    galaxyId: String(galaxyId),
+    planetId: String(planetId),
     index,
     name: name ? String(name).slice(0, 60) : 'Unnamed',
     starCount: Number.isInteger(starCount) && starCount >= 0 ? starCount : 0,
@@ -60,13 +60,13 @@ function validatePlanet(body) {
 
 function validateMemory(body) {
   const errors = [];
-  const { id, galaxyId, type, title, date, text, photoData, audioData, milestone, relatedIds, planetId } = body || {};
+  const { id, planetId, type, title, date, text, photoData, audioData, milestone, relatedIds, moonId } = body || {};
 
   if (!id || !ALLOWED_TYPES.includes(type)) {
     errors.push('invalid memory: id and a valid type are required');
   }
-  if (!galaxyId || typeof galaxyId !== 'string') {
-    errors.push('invalid memory: galaxyId is required');
+  if (!planetId || typeof planetId !== 'string') {
+    errors.push('invalid memory: planetId is required');
   }
   if (!title || typeof title !== 'string') {
     errors.push('invalid memory: title is required');
@@ -87,7 +87,7 @@ function validateMemory(body) {
 
   const doc = {
     id: String(id),
-    galaxyId: String(galaxyId),
+    planetId: String(planetId),
     type,
     title: String(title).slice(0, 200),
     date: date ? String(date).slice(0, 32) : null,
@@ -98,7 +98,7 @@ function validateMemory(body) {
     relatedIds: Array.isArray(relatedIds)
       ? relatedIds.filter((x) => typeof x === 'string' && x.trim().length > 0).map(String)
       : [],
-    planetId: planetId ? String(planetId) : null,
+    moonId: moonId ? String(moonId) : null,
     deletedAt: null,
     createdAt: new Date().toISOString(),
   };
@@ -120,4 +120,4 @@ function validateMemory(body) {
   return { ok: true, doc, errors };
 }
 
-module.exports = { validateGalaxy, validateMemory, validatePlanet };
+module.exports = { validatePlanet, validateMemory, validateMoon };

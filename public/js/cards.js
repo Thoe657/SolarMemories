@@ -123,11 +123,11 @@ export function formatDate(dateStr) {
 }
 
 /* ============================================================
-   PLANET PORTALS — a galaxy's next/previous planet, shown as an
+   MOON PORTALS — a planet's next/previous moon, shown as an
    actual world hanging far off in the distance rather than a marker
    on the ring. Two textures make one up: an equirectangular surface
    wrapped on a sphere, and a flat caption plate that floats above it.
-   A "next planet" that doesn't exist yet (the active one still has
+   A "next moon" that doesn't exist yet (the active one still has
    room) gets the greyed-out surface and a padlock on its plate, so
    the sky reads as continuing rather than simply ending.
 ============================================================ */
@@ -140,9 +140,9 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-// Banded, gas-giant-ish surface in the galaxy's accent colour. Equirectangular
+// Banded, gas-giant-ish surface in the planet's accent colour. Equirectangular
 // (2:1) so it wraps a SphereGeometry without a visible seam at the poles.
-export function makePlanetSurfaceTexture({ color = '#ffd9a0', locked = false }) {
+export function makeMoonSurfaceTexture({ color = '#ffd9a0', locked = false }) {
   const W = 1024, H = 512;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -192,8 +192,8 @@ export function makePlanetSurfaceTexture({ color = '#ffd9a0', locked = false }) 
   return tex;
 }
 
-// The caption plate floating above a portal planet: "next planet" over the
-// planet's name, or a padlock over "not formed yet" when it's locked.
+// The caption plate floating above a portal moon: "next moon" over the
+// moon's name, or a padlock over "not formed yet" when it's locked.
 export function makePortalLabelTexture({ caption, label, locked }) {
   const W = 512, H = 256;
   const canvas = document.createElement('canvas');

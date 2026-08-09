@@ -4,7 +4,7 @@
    Lightweight standalone 2D canvas (not Three.js), reusing the
    layered radial-gradient "nebula glow" technique from scene.js,
    with a slow drift of a few cloud blobs. Purely a visual/
-   interaction gate layered on top of the galaxy picker, which
+   interaction gate layered on top of the planet picker, which
    keeps initializing underneath exactly as it always has.
 ============================================================ */
 import { initAudio } from './audioManager.js';

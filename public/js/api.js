@@ -3,15 +3,15 @@
    -----------------------------------------------------------
    This gallery is served by a small local Node server which stores
    data as JSON files in a local "data" folder. The gallery just
-   calls /api/memories and /api/galaxies on the same origin.
+   calls /api/memories and /api/planets on the same origin.
 ============================================================ */
 
 export const MEMORIES_URL = '/api/memories';
-export const GALAXIES_URL = '/api/galaxies';
+export const PLANETS_URL = '/api/planets';
 
 export async function tryRestoreStorage() {
   try {
-    const resp = await fetch(GALAXIES_URL);
+    const resp = await fetch(PLANETS_URL);
     return resp.ok ? 'remote' : 'offline';
   } catch (e) {
     console.warn('Gallery server not reachable', e);
@@ -19,20 +19,20 @@ export async function tryRestoreStorage() {
   }
 }
 
-export async function loadGalaxies() {
-  const resp = await fetch(GALAXIES_URL);
+export async function loadPlanets() {
+  const resp = await fetch(PLANETS_URL);
   if (!resp.ok) {
     throw new Error(`load failed (${resp.status})`);
   }
   const body = await resp.json();
-  return body.galaxies || [];
+  return body.planets || [];
 }
 
-export async function createGalaxyRemote(galaxy) {
-  const resp = await fetch(GALAXIES_URL, {
+export async function createPlanetRemote(planet) {
+  const resp = await fetch(PLANETS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(galaxy)
+    body: JSON.stringify(planet)
   });
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
@@ -40,8 +40,8 @@ export async function createGalaxyRemote(galaxy) {
   }
 }
 
-export async function deleteGalaxyRemote(id) {
-  const resp = await fetch(`${GALAXIES_URL}/${encodeURIComponent(id)}`, {
+export async function deletePlanetRemote(id) {
+  const resp = await fetch(`${PLANETS_URL}/${encodeURIComponent(id)}`, {
     method: 'DELETE'
   });
   if (!resp.ok) {
@@ -50,20 +50,20 @@ export async function deleteGalaxyRemote(id) {
   }
 }
 
-// A galaxy's planets (star groupings), sorted by index — oldest first.
-export async function loadPlanets(galaxyId) {
-  const resp = await fetch(`${GALAXIES_URL}/${encodeURIComponent(galaxyId)}/planets`);
+// A planet's moons (star groupings), sorted by index — oldest first.
+export async function loadMoons(planetId) {
+  const resp = await fetch(`${PLANETS_URL}/${encodeURIComponent(planetId)}/moons`);
   if (!resp.ok) {
     throw new Error(`load failed (${resp.status})`);
   }
   const body = await resp.json();
-  return body.planets || [];
+  return body.moons || [];
 }
 
-export async function persistMemory(memory, galaxyId) {
+export async function persistMemory(memory, planetId) {
   const payload = {
     id: String(memory.id),
-    galaxyId,
+    planetId,
     type: memory.type,
     title: memory.title,
     date: memory.date,
@@ -82,12 +82,12 @@ export async function persistMemory(memory, galaxyId) {
     const body = await resp.json().catch(() => ({}));
     throw new Error(body.error || `save failed (${resp.status})`);
   }
-  // Carries back the planet the server filed this star onto.
+  // Carries back the moon the server filed this star onto.
   return resp.json().catch(() => ({}));
 }
 
-export async function loadAllMemories(galaxyId) {
-  const resp = await fetch(`${MEMORIES_URL}?galaxy=${encodeURIComponent(galaxyId)}`);
+export async function loadAllMemories(planetId) {
+  const resp = await fetch(`${MEMORIES_URL}?planet=${encodeURIComponent(planetId)}`);
   if (!resp.ok) {
     throw new Error(`load failed (${resp.status})`);
   }
@@ -103,7 +103,7 @@ export async function loadAllMemories(galaxyId) {
     audioData: entry.audioData || null,
     milestone: !!entry.milestone,
     relatedIds: Array.isArray(entry.relatedIds) ? entry.relatedIds.map(String) : [],
-    planetId: entry.planetId || null
+    moonId: entry.moonId || null
   }));
 }
 
@@ -117,8 +117,8 @@ export async function deleteMemory(id) {
   }
 }
 
-export async function loadTrashedMemories(galaxyId) {
-  const resp = await fetch(`${MEMORIES_URL}/trash?galaxy=${encodeURIComponent(galaxyId)}`);
+export async function loadTrashedMemories(planetId) {
+  const resp = await fetch(`${MEMORIES_URL}/trash?planet=${encodeURIComponent(planetId)}`);
   if (!resp.ok) {
     throw new Error(`load failed (${resp.status})`);
   }

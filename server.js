@@ -1,24 +1,24 @@
 const path = require('path');
 const express = require('express');
 
-const { PORT, DATA_DIR, GALAXIES_DIR, MEMORIES_DIR, PLANETS_DIR, TRASH_MAX_AGE_MS, BACKUP_STALE_MS } = require('./src/config');
+const { PORT, DATA_DIR, PLANETS_DIR, MEMORIES_DIR, MOONS_DIR, TRASH_MAX_AGE_MS, BACKUP_STALE_MS } = require('./src/config');
 const { ensureDataFiles } = require('./src/lib/storage');
 const { sweepDeleted } = require('./src/lib/archive');
 const { latestBackupTime, createBackup } = require('./src/lib/zipBackup');
-const galaxiesRouter = require('./src/routes/galaxies');
+const planetsRouter = require('./src/routes/planets');
 const memoriesRouter = require('./src/routes/memories');
 const backupRouter = require('./src/routes/backup');
 
 ensureDataFiles();
-sweepDeleted(GALAXIES_DIR, TRASH_MAX_AGE_MS);
-sweepDeleted(MEMORIES_DIR, TRASH_MAX_AGE_MS);
 sweepDeleted(PLANETS_DIR, TRASH_MAX_AGE_MS);
+sweepDeleted(MEMORIES_DIR, TRASH_MAX_AGE_MS);
+sweepDeleted(MOONS_DIR, TRASH_MAX_AGE_MS);
 
 const app = express();
 app.use(express.json({ limit: '12mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/api/galaxies', galaxiesRouter);
+app.use('/api/planets', planetsRouter);
 app.use('/api/memories', memoriesRouter);
 app.use('/api/backup', backupRouter);
 

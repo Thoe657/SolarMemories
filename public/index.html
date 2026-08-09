@@ -19,7 +19,7 @@
   </div>
 </div>
 
-<div id="galaxyPicker">
+<div id="planetPicker">
   <div class="start-stars" id="startStars"></div>
   <div class="solar-system" id="solarSystem">
     <div class="sun">
@@ -28,9 +28,9 @@
     <div class="orbits" id="orbits"></div>
   </div>
 
-  <div class="new-galaxy-form hidden" id="newGalaxyForm">
-    <h2 class="form-title">new galaxy</h2>
-    <input type="text" id="newGalaxyName" placeholder="e.g. luna the dog, family trips..." maxlength="40" />
+  <div class="new-planet-form hidden" id="newPlanetForm">
+    <h2 class="form-title">new planet</h2>
+    <input type="text" id="newPlanetName" placeholder="e.g. luna the dog, family trips..." maxlength="40" />
 
     <label class="form-label">colour</label>
     <div class="color-row" id="colorRow">
@@ -57,8 +57,8 @@
     <p class="form-hint">closest to farthest from the sun</p>
 
     <div class="panel-actions">
-      <button class="btn btn-secondary" id="cancelGalaxyBtn">cancel</button>
-      <button class="btn btn-primary" id="createGalaxyBtn" disabled>create</button>
+      <button class="btn btn-secondary" id="cancelPlanetBtn">cancel</button>
+      <button class="btn btn-primary" id="createPlanetBtn" disabled>create</button>
     </div>
   </div>
 </div>
@@ -73,9 +73,9 @@
 
 <div class="topbar" id="topbar" style="display:none;">
   <div>
-    <div class="title" id="galaxyTitle">maddi's memories</div>
+    <div class="title" id="planetTitle">maddi's memories</div>
     <div class="hint">Everything and anything about them</div>
-    <div class="planet-label hidden" id="planetLabel"></div>
+    <div class="moon-label hidden" id="moonLabel"></div>
     <div class="storage-status" id="storageStatus"></div>
   </div>
   <div style="display:flex; gap:8px; pointer-events:auto;">
@@ -83,13 +83,13 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
       <span class="label">back up</span>
     </button>
-    <button class="add-btn" id="backToGalaxiesBtn" aria-label="Back to galaxies">
+    <button class="add-btn" id="backToPlanetsBtn" aria-label="Back to planets">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      <span class="label">galaxies</span>
+      <span class="label">planets</span>
     </button>
-    <button class="add-btn" id="editGalaxyBtn" aria-label="Edit this galaxy">
+    <button class="add-btn" id="editPlanetBtn" aria-label="Edit this planet">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-      <span class="label">edit galaxy</span>
+      <span class="label">edit planet</span>
     </button>
     <button class="add-btn" id="openAddBtn" aria-label="Add a memory">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -100,15 +100,15 @@
 
 <div class="toast" id="backupToast"></div>
 
-<!-- Edit Galaxy Overlay -->
-<div class="overlay" id="editGalaxyOverlay">
+<!-- Edit Planet Overlay -->
+<div class="overlay" id="editPlanetOverlay">
   <div class="panel">
-    <h2>edit galaxy</h2>
+    <h2>edit planet</h2>
     <p class="sub">What do you want to change?</p>
 
     <div class="field-group">
       <label>name</label>
-      <input type="text" id="editGalaxyName" maxlength="40" />
+      <input type="text" id="editPlanetName" maxlength="40" />
     </div>
 
     <div class="field-group">
@@ -145,14 +145,14 @@
     </div>
 
     <div class="panel-actions">
-      <button class="btn btn-secondary" id="cancelEditGalaxyBtn">cancel</button>
-      <button class="btn btn-primary" id="saveEditGalaxyBtn">save changes</button>
+      <button class="btn btn-secondary" id="cancelEditPlanetBtn">cancel</button>
+      <button class="btn btn-primary" id="saveEditPlanetBtn">save changes</button>
     </div>
 
-    <button class="read-delete" id="deleteGalaxyBtn">delete this galaxy</button>
-    <div class="confirm-row" id="deleteGalaxyConfirmRow" style="display:none;">
-      <button class="btn btn-secondary" id="cancelDeleteGalaxyBtn">keep it</button>
-      <button class="btn btn-primary" id="confirmDeleteGalaxyBtn" style="background: var(--accent-deep);">yes, delete</button>
+    <button class="read-delete" id="deletePlanetBtn">delete this planet</button>
+    <div class="confirm-row" id="deletePlanetConfirmRow" style="display:none;">
+      <button class="btn btn-secondary" id="cancelDeletePlanetBtn">keep it</button>
+      <button class="btn btn-primary" id="confirmDeletePlanetBtn" style="background: var(--accent-deep);">yes, delete</button>
     </div>
   </div>
 </div>

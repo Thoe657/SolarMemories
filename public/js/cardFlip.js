@@ -189,7 +189,7 @@ async function deleteMemoryAndClose(memory) {
   if (idx >= 0) memories.splice(idx, 1);
 
   // The hint is about the ring being empty, so it tracks rendered stars —
-  // `memories` also holds the galaxy's other planets' stars.
+  // `memories` also holds the planet's other moons' stars.
   if (renderedStarCount() === 0) {
     document.getElementById('emptyHint').classList.remove('hidden');
   }

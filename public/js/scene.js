@@ -2,17 +2,17 @@
    THREE.JS SETUP — renderer/camera/lights/background/animate loop
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
-import { makePolaroidTexture, makePlanetSurfaceTexture, makePortalLabelTexture, roundRect } from './cards.js';
-import { loadAllMemories, loadPlanets } from './api.js';
+import { makePolaroidTexture, makeMoonSurfaceTexture, makePortalLabelTexture, roundRect } from './cards.js';
+import { loadAllMemories, loadMoons } from './api.js';
 import { showStorageWarning } from './util.js';
 import {
   memories,
-  currentGalaxy,
-  currentGalaxyId,
-  currentPlanets,
-  currentPlanetIndex,
-  setCurrentPlanets,
-  setCurrentPlanetIndex
+  currentPlanet,
+  currentPlanetId,
+  currentMoons,
+  currentMoonIndex,
+  setCurrentMoons,
+  setCurrentMoonIndex
 } from './state.js';
 import { shouldDampenMotion, prefersReducedMotion, playUiSound } from './audioManager.js';
 
@@ -156,7 +156,7 @@ const pointer = new THREE.Vector2();
 
    The layout is a function of how many stars are in the ring, not of each
    star's arrival order, so everything is re-spaced whenever that count
-   changes (applyRingLayout below). A half-full planet therefore spreads
+   changes (applyRingLayout below). A half-full moon therefore spreads
    across the whole circle instead of bunching up with a gap behind you, and
    deleting a star closes its gap rather than leaving a hole.
 
@@ -169,11 +169,11 @@ const ONE_ROW_HEIGHT = 1.2;         // the camera's own eye level
 const TWO_ROW_HEIGHTS = [2.3, 0.1]; // 2.2 apart for cards 1.8 tall → a 0.4 gap
 
 // Widest a gap between neighbouring stars is allowed to get. Dividing the full
-// circle by the count alone is even but goes hollow when a planet is only part
+// circle by the count alone is even but goes hollow when a moon is only part
 // full — 7 stars would sit 51° apart, one per screenful, and you'd spin all the
 // way round to see them. Past this the ring stops wrapping and becomes an arc
 // centred on where you're facing when you arrive, so a small collection reads
-// as a small collection. A full planet's natural step is below this, so it
+// as a small collection. A full moon's natural step is below this, so it
 // still closes into a complete circle.
 const MAX_ANGULAR_STEP = (26 * Math.PI) / 180;
 
@@ -223,7 +223,7 @@ function applyRingLayout() {
 
 /* ============================================================
    TEXTURE CACHE — in-memory Map<memoryId, CanvasTexture>, scoped to
-   this page session. Re-entering a previously visited galaxy skips
+   this page session. Re-entering a previously visited planet skips
    regenerating (canvas-drawing) unchanged memories' textures.
    NOTE: memory content editing isn't supported yet (Phase 6's
    relatedIds don't affect the visual texture), so cache invalidation
@@ -285,8 +285,8 @@ export function addMemoryToScene(memory) {
 }
 
 /* ============================================================
-   LOADING PLACEHOLDERS — shown at ring positions while a galaxy's
-   memories are being fetched, so entering a galaxy never shows a
+   LOADING PLACEHOLDERS — shown at ring positions while a planet's
+   memories are being fetched, so entering a planet never shows a
    flash of empty ring on a slow connection.
 ============================================================ */
 const LOADING_PLACEHOLDER_COUNT = 4;
@@ -356,8 +356,8 @@ function loadPhotoImgFor(memory) {
 }
 
 // Tear down every mesh currently in the ring (stars and any loading
-// placeholders) without touching `memories` — used both when leaving a galaxy
-// and when travelling to another of its planets.
+// placeholders) without touching `memories` — used both when leaving a planet
+// and when travelling to another of its moons.
 function clearRenderedStars() {
   cardGroup.children.slice().forEach((mesh) => {
     disposeCardMesh(mesh);
@@ -368,45 +368,45 @@ function clearRenderedStars() {
 }
 
 // Remove all memory cards from the scene and reset state, ready for a
-// different galaxy's memories to be loaded in.
+// different planet's memories to be loaded in.
 export function clearGalleryScene() {
   clearRenderedStars();
   memories.length = 0;
-  setCurrentPlanets([]);
-  setCurrentPlanetIndex(0);
+  setCurrentMoons([]);
+  setCurrentMoonIndex(0);
   updatePortals();
-  updatePlanetLabel();
+  updateMoonLabel();
   document.getElementById('emptyHint').classList.remove('hidden');
 }
 
 // How many stars are actually in the ring right now — i.e. the viewed
-// planet's, not the whole galaxy's.
+// moon's, not the whole planet's.
 export function renderedStarCount() {
   return cardGroup.children.length;
 }
 
-// Picks the subset of a galaxy's memories that belongs in the ring: the ones
-// filed onto the viewed planet. Two fallbacks keep a galaxy from ever
+// Picks the subset of a planet's memories that belongs in the ring: the ones
+// filed onto the viewed moon. Two fallbacks keep a planet from ever
 // rendering an empty ring when it has stars to show:
-//  - no planets at all (nothing has been filed yet) → render everything;
-//  - a star with no planetId (predates planets, backfill not run) → treat it
-//    as belonging to the oldest planet.
-function starsOnViewedPlanet(all, planets, planetIndex) {
-  if (planets.length === 0) return all;
-  const viewed = planets.find((p) => p.index === planetIndex);
+//  - no moons at all (nothing has been filed yet) → render everything;
+//  - a star with no moonId (predates moons, backfill not run) → treat it
+//    as belonging to the oldest moon.
+function starsOnViewedMoon(all, moons, moonIndex) {
+  if (moons.length === 0) return all;
+  const viewed = moons.find((p) => p.index === moonIndex);
   if (!viewed) return [];
   return all.filter((m) => (
-    m.planetId ? m.planetId === viewed.id : viewed.index === 0
+    m.moonId ? m.moonId === viewed.id : viewed.index === 0
   ));
 }
 
 /* ============================================================
-   PLANET PORTALS — two markers sitting just outside the card ring,
+   MOON PORTALS — two markers sitting just outside the card ring,
    left and right of where you enter, for travelling between a
-   galaxy's planets. They live in their own group so the ring's own
+   planet's moons. They live in their own group so the ring's own
    bookkeeping (slot index, renderedStarCount) still counts stars only.
-   The "next" portal is shown greyed/locked when no successor planet
-   exists yet; "previous" only appears when there's an earlier planet
+   The "next" portal is shown greyed/locked when no successor moon
+   exists yet; "previous" only appears when there's an earlier moon
    and is never locked.
 ============================================================ */
 const portalGroup = new THREE.Group();
@@ -414,12 +414,12 @@ scene.add(portalGroup);
 
 // Nothing else in the scene reacts to lights — cards, fairy lights and the
 // background sky are all MeshBasicMaterial — so this only shapes the portal
-// planets, which are the one lit surface here.
+// moons, which are the one lit surface here.
 //
 // It sits above the middle of the ring, i.e. above the viewer, because both
 // portals hang off to the sides: lighting from there catches the hemisphere
 // each one turns toward you, with the terminator falling just below centre.
-// A directional light aimed from one side left whichever planet faced away
+// A directional light aimed from one side left whichever moon faced away
 // from it as a near-black disc. decay 0 keeps it from falling off over the
 // 26 units out to the portals.
 const portalSun = new THREE.PointLight(0xfff2dd, 2.4, 0, 0);
@@ -428,10 +428,10 @@ scene.add(portalSun);
 
 /* Vertical budget, since it's tight: the top row of stars tops out around 13.7°
    of elevation and the camera's 55° vertical FOV reaches 27.5°, leaving a ~14°
-   band of clear sky. The planet is sized and placed to sit fully inside it
+   band of clear sky. The moon is sized and placed to sit fully inside it
    (15°–26°) so it's in view without tilting; its caption plate rides just above
    that, which is the one part you tilt up a few degrees to read. Below the
-   planet was tried first and is worse — the plate lands inside the card band
+   moon was tried first and is worse — the plate lands inside the card band
    and gets occluded by the ring. */
 const PORTAL_DISTANCE = 26;                        // well beyond the 8.2 card ring
 const PORTAL_ELEVATION = (20.5 * Math.PI) / 180;
@@ -472,9 +472,9 @@ function makePortalObject(kind) {
     new THREE.PlaneGeometry(labelWidth, labelWidth / 2),
     new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
   );
-  // Beside the planet, not above or below it. Stacking doesn't fit: the clear
+  // Beside the moon, not above or below it. Stacking doesn't fit: the clear
   // sky between the top row of stars (13.7°) and the top of the view (27.5°)
-  // is only about 14° tall, which the planet alone nearly fills — above put
+  // is only about 14° tall, which the moon alone nearly fills — above put
   // the caption off-screen, below put it behind the ring. Sideways is free.
   // Local +x runs toward *decreasing* azimuth once the group is turned to face
   // the viewer, so the sign here keeps both captions on their inward side.
@@ -494,11 +494,11 @@ function makePortalObject(kind) {
 const portals = { prev: makePortalObject('prev'), next: makePortalObject('next') };
 
 function setPortalAppearance(portal, { caption, label, locked }) {
-  const color = currentGalaxy?.accentColor || '#ffd9a0';
+  const color = currentPlanet?.accentColor || '#ffd9a0';
 
   const oldSurface = portal.body.material.map;
-  portal.body.material.map = makePlanetSurfaceTexture({ color, locked });
-  // A locked planet is a ghost of a world, but still has to read as one — at
+  portal.body.material.map = makeMoonSurfaceTexture({ color, locked });
+  // A locked moon is a ghost of a world, but still has to read as one — at
   // half opacity over a starfield it disappeared and left the caption floating.
   portal.body.material.opacity = locked ? 0.72 : 1;
   portal.body.material.needsUpdate = true;
@@ -509,65 +509,65 @@ function setPortalAppearance(portal, { caption, label, locked }) {
   portal.label.material.needsUpdate = true;
   oldLabel?.dispose();
 
-  // an unformed planet gets no atmosphere — it reads as a ghost of a world
+  // an unformed moon gets no atmosphere — it reads as a ghost of a world
   portal.halo.visible = !locked;
   portal.halo.material.color.set(color);
   portal.locked = locked;
 }
 
-// Rebuilds both portals from the current planet list and viewed index. A
-// galaxy with no planet records at all shows neither: the ring isn't
-// planet-filtered in that case (see starsOnViewedPlanet), so there's nowhere
+// Rebuilds both portals from the current moon list and viewed index. A
+// planet with no moon records at all shows neither: the ring isn't
+// moon-filtered in that case (see starsOnViewedMoon), so there's nowhere
 // to travel to.
 function updatePortals() {
-  if (currentPlanets.length === 0) {
+  if (currentMoons.length === 0) {
     portals.prev.group.visible = false;
     portals.next.group.visible = false;
     return;
   }
 
-  const earlier = currentPlanets.filter((p) => p.index < currentPlanetIndex);
+  const earlier = currentMoons.filter((p) => p.index < currentMoonIndex);
   const prev = earlier[earlier.length - 1];
-  const next = currentPlanets.find((p) => p.index > currentPlanetIndex);
+  const next = currentMoons.find((p) => p.index > currentMoonIndex);
 
   portals.prev.group.visible = !!prev;
   if (prev) {
     portals.prev.targetIndex = prev.index;
     setPortalAppearance(portals.prev, {
-      caption: 'previous planet', label: prev.name, locked: false
+      caption: 'previous moon', label: prev.name, locked: false
     });
   }
 
   portals.next.group.visible = true;
   portals.next.targetIndex = next ? next.index : null;
   setPortalAppearance(portals.next, next
-    ? { caption: 'next planet', label: next.name, locked: false }
-    : { caption: 'next planet', label: 'not formed yet', locked: true });
+    ? { caption: 'next moon', label: next.name, locked: false }
+    : { caption: 'next moon', label: 'not formed yet', locked: true });
 }
 
 // Small "you're here" readout in the topbar — without it the portals tell you
-// where you can go but not where you are. Hidden for a galaxy that only has
-// the one planet, where there's nothing to disambiguate.
-function updatePlanetLabel() {
-  const el = document.getElementById('planetLabel');
+// where you can go but not where you are. Hidden for a planet that only has
+// the one moon, where there's nothing to disambiguate.
+function updateMoonLabel() {
+  const el = document.getElementById('moonLabel');
   if (!el) return;
-  const pos = currentPlanets.findIndex((p) => p.index === currentPlanetIndex);
-  if (currentPlanets.length < 2 || pos === -1) {
+  const pos = currentMoons.findIndex((p) => p.index === currentMoonIndex);
+  if (currentMoons.length < 2 || pos === -1) {
     el.textContent = '';
     el.classList.add('hidden');
     return;
   }
-  el.textContent = `✦ ${currentPlanets[pos].name} · planet ${pos + 1} of ${currentPlanets.length}`;
+  el.textContent = `✦ ${currentMoons[pos].name} · moon ${pos + 1} of ${currentMoons.length}`;
   el.classList.remove('hidden');
 }
 
-// Swap which planet's stars are in the ring. `memories` (the galaxy's stars
-// across every planet) is deliberately left alone — only the meshes change.
-export function showPlanet(planetIndex) {
+// Swap which moon's stars are in the ring. `memories` (the planet's stars
+// across every moon) is deliberately left alone — only the meshes change.
+export function showMoon(moonIndex) {
   clearRenderedStars();
-  setCurrentPlanetIndex(planetIndex);
+  setCurrentMoonIndex(moonIndex);
 
-  starsOnViewedPlanet(memories, currentPlanets, planetIndex).forEach((mem) => {
+  starsOnViewedMoon(memories, currentMoons, moonIndex).forEach((mem) => {
     addMemoryToScene(mem);
     // a cache hit already has its final texture (photo decoded and all) —
     // no need to re-decode the image and regenerate it
@@ -575,36 +575,36 @@ export function showPlanet(planetIndex) {
   });
 
   updatePortals();
-  updatePlanetLabel();
+  updateMoonLabel();
   document.getElementById('emptyHint').classList.toggle('hidden', renderedStarCount() > 0);
 }
 
-// Places a newly-created star. Which planet it belongs to is the server's
-// call (it files new stars onto the galaxy's newest planet, creating the next
-// one past the cap), so the planet list is refetched and the star only joins
-// the ring if it landed on the planet being viewed. Returns the planet it
+// Places a newly-created star. Which moon it belongs to is the server's
+// call (it files new stars onto the planet's newest moon, creating the next
+// one past the cap), so the moon list is refetched and the star only joins
+// the ring if it landed on the moon being viewed. Returns the moon it
 // landed on, or null if that couldn't be determined.
 export async function placeNewStar(memory) {
   try {
-    setCurrentPlanets(await loadPlanets(currentGalaxyId));
+    setCurrentMoons(await loadMoons(currentPlanetId));
   } catch (e) {
-    console.warn('Could not refresh planets', e);
+    console.warn('Could not refresh moons', e);
   }
 
-  const viewed = currentPlanets.find((p) => p.index === currentPlanetIndex);
-  // No planetId (a save the server never assigned) or no planets at all means
-  // the ring isn't planet-filtered — show it either way.
-  if (!memory.planetId || !viewed || memory.planetId === viewed.id) {
+  const viewed = currentMoons.find((p) => p.index === currentMoonIndex);
+  // No moonId (a save the server never assigned) or no moons at all means
+  // the ring isn't moon-filtered — show it either way.
+  if (!memory.moonId || !viewed || memory.moonId === viewed.id) {
     addMemoryToScene(memory);
   }
 
   updatePortals();
-  updatePlanetLabel();
-  return currentPlanets.find((p) => p.id === memory.planetId) || null;
+  updateMoonLabel();
+  return currentMoons.find((p) => p.id === memory.moonId) || null;
 }
 
-// Callback invoked with the target planet index when an unlocked portal is
-// clicked. Wired up by galaxyPicker.js (which owns the transition) rather
+// Callback invoked with the target moon index when an unlocked portal is
+// clicked. Wired up by planetPicker.js (which owns the transition) rather
 // than imported from there, to avoid a circular import.
 let onPortalClick = null;
 export function setOnPortalClick(fn) {
@@ -622,27 +622,27 @@ function handlePortalClick(portal) {
   if (onPortalClick) onPortalClick(portal.targetIndex);
 }
 
-// Load a galaxy's memories into the (already-cleared) scene. Every memory goes
-// into the shared `memories` state, but only the viewed planet's are rendered.
-export async function loadGalaxyMemories(galaxyId) {
+// Load a planet's memories into the (already-cleared) scene. Every memory goes
+// into the shared `memories` state, but only the viewed moon's are rendered.
+export async function loadPlanetMemories(planetId) {
   let restored = [];
-  let planets = [];
+  let moons = [];
   try {
-    [restored, planets] = await Promise.all([
-      loadAllMemories(galaxyId),
-      loadPlanets(galaxyId)
+    [restored, moons] = await Promise.all([
+      loadAllMemories(planetId),
+      loadMoons(planetId)
     ]);
   } catch (e) {
     console.warn('Could not load memories', e);
     showStorageWarning('couldn\'t reach the gallery server — check that "npm start" is running, then reload.');
   }
-  setCurrentPlanets(planets);
+  setCurrentMoons(moons);
 
   clearLoadingPlaceholders();
   restored.forEach((mem) => memories.push(mem));
 
-  // A galaxy always opens on its oldest planet.
-  showPlanet(planets.length > 0 ? planets[0].index : 0);
+  // A planet always opens on its oldest moon.
+  showMoon(moons.length > 0 ? moons[0].index : 0);
 }
 
 // Removes a single memory's mesh from the scene (disposing its GPU
@@ -863,7 +863,7 @@ function animate(now = 0) {
     mesh.rotation.z = ud.baseRotZ + Math.sin(t * ud.bobSpeed * 0.5 + ud.bobOffset) * 0.03 * motionDamp;
   });
 
-  // portal planets turn slowly on their axis; a locked one gets a brief
+  // portal moons turn slowly on their axis; a locked one gets a brief
   // swell when clicked, so the click reads as heard rather than ignored
   Object.values(portals).forEach((portal) => {
     if (!portal.group.visible) return;

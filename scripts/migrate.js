@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Migrates data/galaxies.json + data/memories.json (the old flat-file
-// layout) into the one-file-per-record layout: data/galaxies/<id>.json,
+// layout, predating even the "galaxy" terminology rename in Phase 11) into
+// the one-file-per-record layout: data/planets/<id>.json,
 // data/memories/<id>.json, and data/index.json (mirrors the full memory
 // records, including photoData/audioData, so the ring view and read view
 // keep working without an extra per-card fetch). Run with --dry-run to
@@ -9,9 +10,9 @@ const fs = require('fs');
 const path = require('path');
 const {
   DATA_DIR,
-  GALAXIES_FILE,
+  LEGACY_PLANETS_FILE,
   MEMORIES_FILE,
-  GALAXIES_DIR,
+  PLANETS_DIR,
   MEMORIES_DIR,
   INDEX_FILE,
 } = require('../src/config');
@@ -39,16 +40,16 @@ function buildIndexEntry(m) {
 function main() {
   const dryRun = process.argv.includes('--dry-run');
 
-  const galaxies = readJSONFlat(GALAXIES_FILE);
+  const planets = readJSONFlat(LEGACY_PLANETS_FILE);
   const memories = readJSONFlat(MEMORIES_FILE);
   const indexEntries = memories.map(buildIndexEntry);
 
-  console.log(`Migration plan (source: ${GALAXIES_FILE}, ${MEMORIES_FILE}):`);
-  console.log(`  ${galaxies.length} galaxies -> ${GALAXIES_DIR}\\<id>.json`);
+  console.log(`Migration plan (source: ${LEGACY_PLANETS_FILE}, ${MEMORIES_FILE}):`);
+  console.log(`  ${planets.length} planets -> ${PLANETS_DIR}\\<id>.json`);
   console.log(`  ${memories.length} memories -> ${MEMORIES_DIR}\\<id>.json (full record)`);
   console.log(`  ${indexEntries.length} index entries -> ${INDEX_FILE}`);
-  if (galaxies.length) {
-    console.log(`  sample galaxy: ${JSON.stringify(galaxies[0])}`);
+  if (planets.length) {
+    console.log(`  sample planet: ${JSON.stringify(planets[0])}`);
   }
   if (indexEntries.length) {
     console.log(`  sample index entry: ${JSON.stringify(indexEntries[0])}`);
@@ -60,29 +61,29 @@ function main() {
   }
 
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(GALAXIES_DIR)) fs.mkdirSync(GALAXIES_DIR, { recursive: true });
+  if (!fs.existsSync(PLANETS_DIR)) fs.mkdirSync(PLANETS_DIR, { recursive: true });
   if (!fs.existsSync(MEMORIES_DIR)) fs.mkdirSync(MEMORIES_DIR, { recursive: true });
 
   // Back up the old flat files before writing anything new. The originals
   // are left in place too -- removing them later is a manual step.
-  if (fs.existsSync(GALAXIES_FILE)) {
-    fs.copyFileSync(GALAXIES_FILE, GALAXIES_FILE + '.bak');
-    console.log(`Backed up ${GALAXIES_FILE} -> ${GALAXIES_FILE}.bak`);
+  if (fs.existsSync(LEGACY_PLANETS_FILE)) {
+    fs.copyFileSync(LEGACY_PLANETS_FILE, LEGACY_PLANETS_FILE + '.bak');
+    console.log(`Backed up ${LEGACY_PLANETS_FILE} -> ${LEGACY_PLANETS_FILE}.bak`);
   }
   if (fs.existsSync(MEMORIES_FILE)) {
     fs.copyFileSync(MEMORIES_FILE, MEMORIES_FILE + '.bak');
     console.log(`Backed up ${MEMORIES_FILE} -> ${MEMORIES_FILE}.bak`);
   }
 
-  galaxies.forEach((g) => {
-    writeJSONAtomic(path.join(GALAXIES_DIR, `${g.id}.json`), g);
+  planets.forEach((p) => {
+    writeJSONAtomic(path.join(PLANETS_DIR, `${p.id}.json`), p);
   });
   memories.forEach((m) => {
     writeJSONAtomic(path.join(MEMORIES_DIR, `${m.id}.json`), m);
   });
   writeJSONAtomic(INDEX_FILE, indexEntries);
 
-  console.log(`\nWrote ${galaxies.length} galaxy file(s), ${memories.length} memory file(s), and the index.`);
+  console.log(`\nWrote ${planets.length} planet file(s), ${memories.length} memory file(s), and the index.`);
 }
 
 main();

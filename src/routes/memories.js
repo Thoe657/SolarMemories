@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
-const { MEMORIES_DIR, PLANETS_DIR, PLANET_STAR_CAP, INDEX_FILE } = require('../config');
+const { MEMORIES_DIR, MOONS_DIR, MOON_STAR_CAP, INDEX_FILE } = require('../config');
 const {
   readJSON,
   writeJSON,
@@ -10,8 +10,8 @@ const {
   readAllRecords,
 } = require('../lib/storage');
 const { archiveRecord, restoreRecord, purgeRecord, listDeleted } = require('../lib/archive');
-const { validateMemory, validatePlanet } = require('../lib/validate');
-const { randomPlanetName } = require('../lib/planetNames');
+const { validateMemory, validateMoon } = require('../lib/validate');
+const { randomMoonName } = require('../lib/moonNames');
 
 const router = express.Router();
 
@@ -19,28 +19,28 @@ function toIndexEntry(doc) {
   return { ...doc, milestone: doc.milestone || false };
 }
 
-// Finds the galaxy's newest planet and files the new star onto it if it has
-// room, otherwise creates the next planet (random pool name). Returns the
-// assigned planet's id. Must be called from inside withWriteLock.
-function assignPlanet(galaxyId) {
-  const planets = readAllRecords(PLANETS_DIR).filter((p) => p.galaxyId === galaxyId && !p.deletedAt);
-  const newest = planets.slice().sort((a, b) => b.index - a.index)[0];
+// Finds the planet's newest moon and files the new star onto it if it has
+// room, otherwise creates the next moon (random pool name). Returns the
+// assigned moon's id. Must be called from inside withWriteLock.
+function assignMoon(planetId) {
+  const moons = readAllRecords(MOONS_DIR).filter((p) => p.planetId === planetId && !p.deletedAt);
+  const newest = moons.slice().sort((a, b) => b.index - a.index)[0];
 
-  if (newest && newest.starCount < PLANET_STAR_CAP) {
+  if (newest && newest.starCount < MOON_STAR_CAP) {
     const updated = { ...newest, starCount: newest.starCount + 1 };
-    writeRecord(PLANETS_DIR, updated.id, updated);
+    writeRecord(MOONS_DIR, updated.id, updated);
     return updated.id;
   }
 
-  const { ok, doc } = validatePlanet({
-    id: `planet-${crypto.randomUUID()}`,
-    galaxyId,
+  const { ok, doc } = validateMoon({
+    id: `moon-${crypto.randomUUID()}`,
+    planetId,
     index: newest ? newest.index + 1 : 0,
-    name: randomPlanetName(planets.map((p) => p.name)),
+    name: randomMoonName(moons.map((p) => p.name)),
     starCount: 1,
   });
-  if (!ok) throw new Error('failed to create planet');
-  writeRecord(PLANETS_DIR, doc.id, doc);
+  if (!ok) throw new Error('failed to create moon');
+  writeRecord(MOONS_DIR, doc.id, doc);
   return doc.id;
 }
 
@@ -49,10 +49,10 @@ function assignPlanet(galaxyId) {
 // unchanged. Only non-deleted memories are ever added to the index.
 router.get('/', (req, res) => {
   try {
-    const galaxyId = req.query.galaxy ? String(req.query.galaxy) : null;
+    const planetId = req.query.planet ? String(req.query.planet) : null;
     let memories = readJSON(INDEX_FILE);
-    if (galaxyId) {
-      memories = memories.filter((m) => m.galaxyId === galaxyId);
+    if (planetId) {
+      memories = memories.filter((m) => m.planetId === planetId);
     }
     memories = memories.slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     res.json({ memories });
@@ -65,10 +65,10 @@ router.get('/', (req, res) => {
 // Must be registered before GET /:id, or Express would match "trash" as an id.
 router.get('/trash', (req, res) => {
   try {
-    const galaxyId = req.query.galaxy ? String(req.query.galaxy) : null;
+    const planetId = req.query.planet ? String(req.query.planet) : null;
     let memories = listDeleted(MEMORIES_DIR);
-    if (galaxyId) {
-      memories = memories.filter((m) => m.galaxyId === galaxyId);
+    if (planetId) {
+      memories = memories.filter((m) => m.planetId === planetId);
     }
     memories = memories.slice().sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
     res.json({ memories });
@@ -105,11 +105,11 @@ router.post('/', async (req, res) => {
       if (existing) {
         // Preserve identity fields set at creation time -- an edit (Phase 7)
         // re-POSTs the same id and must not get reshuffled onto whatever
-        // planet happens to be active now.
+        // moon happens to be active now.
         doc.createdAt = existing.createdAt;
-        doc.planetId = existing.planetId || null;
+        doc.moonId = existing.moonId || null;
       } else {
-        doc.planetId = assignPlanet(doc.galaxyId);
+        doc.moonId = assignMoon(doc.planetId);
       }
       writeRecord(MEMORIES_DIR, doc.id, doc);
 
@@ -124,9 +124,9 @@ router.post('/', async (req, res) => {
       writeJSON(INDEX_FILE, index);
     });
 
-    // The client needs to know which planet the star was filed onto: it only
-    // renders it into the ring if that's the planet currently being viewed.
-    res.status(201).json({ ok: true, planetId: doc.planetId || null });
+    // The client needs to know which moon the star was filed onto: it only
+    // renders it into the ring if that's the moon currently being viewed.
+    res.status(201).json({ ok: true, moonId: doc.moonId || null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'failed to save memory' });

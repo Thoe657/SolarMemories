@@ -5,10 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 SolarMemories ("Maddi's Memories") — a local personal app for storing memories (photos,
-letters, audio) about favourite people. Each person is a "galaxy"; memories orbit as
-"stars"/cards in a Three.js 3D scene, arranged in rings by galaxy. In the outer
-solar-system picker screen (`galaxyPicker.js`), each galaxy is itself shown as a small
-clickable "world" icon — a separate concept from a galaxy's internal stars/cards.
+letters, audio) about favourite people. Each person is a "planet"; memories orbit as
+"stars"/cards in a Three.js 3D scene, arranged in rings by planet and grouped into
+"moons" of up to 28 stars each. In the outer solar-system picker screen
+(`planetPicker.js`), each person is shown as a small clickable planet icon orbiting the
+sun (maddi) — a separate concept from a planet's internal stars/moons.
+
+(As of Phase 11: this used to be "galaxy" for a person and "planet" for a star-grouping
+— renamed because the picker is a solar system with maddi as the sun, so the people
+orbiting it should be planets, and their star-groupings should be moons of those
+planets. This also retired Phase 1's "world" workaround: the picker's own icons had
+borrowed that name only because "planet" was taken by the star-groupings at the time.)
 
 ## Commands
 
@@ -23,11 +30,17 @@ npm start          # node server.js — serves the app at http://localhost:3000
 - `DATA_DIR` env var overrides where JSON data is stored (defaults to `./data`).
 - `node scripts/migrate.js --dry-run` previews migrating the legacy flat
   `data/galaxies.json`/`data/memories.json` files (kept as an inert `.bak` reference,
-  see below) into the current one-file-per-record layout; only needed once per install.
-- `node scripts/backfill-planets.js --dry-run` previews bucketing any existing memories
-  that predate the `planets` record type (no `planetId`) into retroactive planets; a
+  see below — the *filenames* stay "galaxies.json" even post-Phase-11, since they're
+  real files already on disk from before any renaming existed) into the current
+  one-file-per-record layout; only needed once per install.
+- `node scripts/backfill-moons.js --dry-run` previews bucketing any existing memories
+  that predate the `moons` record type (no `moonId`) into retroactive moons; a
   real run (no `--dry-run`) backs up `data/` to `data.bak-<timestamp>/` first. Only
   needed once, and only if memories existed before Phase 2 landed.
+- `node scripts/rename-to-planets-moons.js --dry-run` previews the one-time Phase 11
+  data migration (`galaxy` → `planet`, old `planet` → `moon`, both the directory layout
+  and the `galaxyId`/`planetId` fields on every record); already run for real against
+  this install's data. Only relevant again if restoring from a pre-Phase-11 backup.
 - `node scripts/build-backgrounds.js` regenerates the baked nebula background PNGs
   under `public/assets/backgrounds/`; only needed to change that art, not for normal
   use. Requires the `canvas` devDependency (native, not needed by `npm start`).
@@ -40,22 +53,27 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
 
 ### Backend (`src/`)
 - `config.js` — `PORT`, `DATA_DIR`, per-record dirs, `MAX_DOC_SIZE`, `ALLOWED_TYPES`,
-  `PLANET_STAR_CAP` (28), trash/backup timing constants.
-- `lib/storage.js` — one-file-per-record JSON storage: `data/galaxies/<id>.json`,
-  `data/memories/<id>.json`, `data/planets/<id>.json`, plus `data/index.json` (a
+  `MOON_STAR_CAP` (28), trash/backup timing constants. Also `LEGACY_PLANETS_FILE`
+  (`data/galaxies.json` — the *filename* keeps its pre-Phase-11 name; see `scripts/
+  migrate.js` below) alongside the current `MEMORIES_FILE` for the same legacy layer.
+- `lib/storage.js` — one-file-per-record JSON storage: `data/planets/<id>.json`,
+  `data/memories/<id>.json`, `data/moons/<id>.json`, plus `data/index.json` (a
   denormalized list mirroring full memory records, including `photoData`/`audioData`,
   so the ring view doesn't need a per-card fetch). Atomic writes (`.tmp` + rename) and a
   `withWriteLock` promise chain for concurrent-request safety, same as before.
-- `lib/validate.js` — pure `validateGalaxy`/`validateMemory`/`validatePlanet` functions
+- `lib/validate.js` — pure `validatePlanet`/`validateMemory`/`validateMoon` functions
   (`{ ok, doc, errors }`), no Express dependency. Validates required fields, `ring`
   clamped 1-3, `photoData`/`audioData` must be well-formed data URLs of the right media
   type, `date` must parse, and payload size is checked against the *decoded* byte length
   of any base64 payload.
-- `lib/planetNames.js` — pool of 24 astronomical names. `randomPlanetName(taken)` picks
-  uniformly at random from the names not in `taken`; callers pass the names already used
-  in *that galaxy*, since Phase 4 made these names the navigation labels on the portals.
-  Past 24 planets in one galaxy the pool is exhausted and repeats resume. Still no
-  cross-galaxy uniqueness tracking — repeats between galaxies are fine.
+- `lib/moonNames.js` — pool of 28 real moon names (Europa, Titan, Phobos, Enceladus,
+  Charon, ...). `randomMoonName(taken)` picks uniformly at random from the names not in
+  `taken`; callers pass the names already used *on that planet*, since Phase 4 made
+  these names the navigation labels on the portals. Past 28 moons on one planet the pool
+  is exhausted and repeats resume. Still no cross-planet uniqueness tracking — repeats
+  between planets are fine. (Pre-Phase-11 this pool held planets/dwarf-planets/
+  exoplanets, back when these records were themselves called "planets" — the Phase 11
+  data migration re-rolled any existing record whose name wasn't a real moon name.)
 - `lib/archive.js` — soft delete: `archiveRecord`/`restoreRecord`/`purgeRecord` move
   records into a `deleted/` subfolder of their normal dir (e.g. `memories/deleted/<id>.json`)
   instead of removing files; `sweepDeleted` permanently purges anything older than
@@ -63,30 +81,30 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
 - `lib/zipBackup.js` — zips all of `data/` into `backups/backup-<ISO-timestamp>.zip`,
   keeping the most recent `BACKUP_KEEP_COUNT` (10); `server.js` triggers one on startup
   if the newest is stale or missing.
-- `routes/galaxies.js`, `routes/memories.js`, `routes/backup.js` — route handlers.
+- `routes/planets.js`, `routes/memories.js`, `routes/backup.js` — route handlers.
   Memories routes: `GET /` (reads the index), `GET /trash`, `GET /:id` (full record),
-  `POST /` (also assigns the memory to the galaxy's newest planet, creating the next one
-  past `PLANET_STAR_CAP`; re-POSTing an existing id preserves its `planetId`, same as
-  `createdAt`; responds `{ ok, planetId }` so the client can tell whether the new star
+  `POST /` (also assigns the memory to the planet's newest moon, creating the next one
+  past `MOON_STAR_CAP`; re-POSTing an existing id preserves its `moonId`, same as
+  `createdAt`; responds `{ ok, moonId }` so the client can tell whether the new star
   belongs in the ring it's currently looking at), `POST /:id/restore`, `DELETE /:id`
   (soft delete), `DELETE /:id/forever`.
-  Galaxies routes also have `GET /:id/planets` (list, sorted by index). Galaxy delete
-  cascades: archives the galaxy and archives its (non-deleted) memories and planets too.
+  Planets routes also have `GET /:id/moons` (list, sorted by index). Planet delete
+  cascades: archives the planet and archives its (non-deleted) memories and moons too.
 
 ### Frontend (`public/`)
 `public/js/main.js` is the module entrypoint (imported via `<script type="module">`),
 wiring the others together, calling `init()`, and wiring the quiet-mode toggle. Modules:
-`state.js` (shared mutable app state — `memories`, `currentGalaxy*`, `storageMode`,
-`galaxiesCache`, `currentPlanets`/`currentPlanetIndex` — with setters since ES module
+`state.js` (shared mutable app state — `memories`, `currentPlanet*`, `storageMode`,
+`planetsCache`, `currentMoons`/`currentMoonIndex` — with setters since ES module
 bindings can only be reassigned by their own module), `util.js` (`escapeHtml`,
 storage-status helpers, the shared bottom-center `showToast`), `api.js` (`fetch()`
-wrappers), `cards.js` (polaroid + card-back + planet-portal canvas textures),
+wrappers), `cards.js` (polaroid + card-back + moon-portal canvas textures),
 `scene.js` (Three.js renderer/camera/lights/background/animate loop, card meshes,
-planet portals, camera drag controls — exposes `setOnCardClick`/`setOnPortalClick`
+moon portals, camera drag controls — exposes `setOnCardClick`/`setOnPortalClick`
 callbacks rather than importing the handling modules directly, to avoid circular
 imports; also owns the in-memory per-session texture cache and the adaptive-quality
-frame-time benchmark — see below), `galaxyPicker.js`
-(solar system rendering, hyperspace transition, new/edit-galaxy forms, starfield
+frame-time benchmark — see below), `planetPicker.js`
+(solar system rendering, hyperspace transition, new/edit-planet forms, starfield
 parallax + shooting stars), `memoryForm.js` (add-memory form, photo/audio
 compression), `entryScreen.js` (one-time nebula start screen, 2D canvas, gates the
 already-initializing picker, starts ambient audio on Enter — a valid user gesture),
@@ -99,7 +117,7 @@ that `scene.js` uses to slow ambient animation and force low quality respectivel
 Two perf/asset notes:
 - `scene.js` caches each memory's generated `CanvasTexture` in an in-memory
   `Map<memoryId, texture>` for the page session, so re-entering a previously visited
-  galaxy skips regenerating unchanged cards' textures. This has no invalidation
+  planet skips regenerating unchanged cards' textures. This has no invalidation
   logic — fine today since there's no way to edit an existing memory's content, but
   **must** be added when memory editing is built (scoped as Phase 7 in
   [docs/PLAN.md](docs/PLAN.md)).
@@ -112,55 +130,61 @@ Two perf/asset notes:
   short-circuits straight to the low-quality path regardless of that benchmark.
 
 Data schema:
-- galaxy: `{ id, name, accentColor, ring (1-3), deletedAt, createdAt }`
-- memory: `{ id, galaxyId, type ('photo'|'letter'|'audio'), title, date, text, photoData, audioData, milestone, relatedIds, planetId, deletedAt, createdAt }`
-- planet: `{ id, galaxyId, index, name, starCount, deletedAt, createdAt }` — a galaxy's
-  memories are grouped onto planets of up to `PLANET_STAR_CAP` (28) each, server-assigned
+- planet: `{ id, name, accentColor, ring (1-3), deletedAt, createdAt }`
+- memory: `{ id, planetId, type ('photo'|'letter'|'audio'), title, date, text, photoData, audioData, milestone, relatedIds, moonId, deletedAt, createdAt }`
+- moon: `{ id, planetId, index, name, starCount, deletedAt, createdAt }` — a planet's
+  memories are grouped onto moons of up to `MOON_STAR_CAP` (28) each, server-assigned
   at memory-creation time.
 
-Planets and the ring: `state.memories` holds **every** star in the open galaxy (so
-related-memory links and the related-memory picker reach across planets), but `scene.js`
-renders only the *viewed* planet's — `loadGalaxyMemories()` fetches the galaxy's planets
-alongside its memories, defaults `currentPlanetIndex` to the oldest planet, and filters
-by `planetId`. Two deliberate fallbacks stop a galaxy ever showing an empty ring when it
-has stars: a galaxy with no planet records renders everything, and a star with no
-`planetId` (predates planets / backfill never run) is treated as belonging to the oldest
-planet. Anything counting what's *on screen* must use `scene.js`'s `renderedStarCount()`,
+Moons and the ring: `state.memories` holds **every** star on the open planet (so
+related-memory links and the related-memory picker reach across moons), but `scene.js`
+renders only the *viewed* moon's — `loadPlanetMemories()` fetches the planet's moons
+alongside its memories, defaults `currentMoonIndex` to the oldest moon, and filters
+by `moonId`. Two deliberate fallbacks stop a planet ever showing an empty ring when it
+has stars: a planet with no moon records renders everything, and a star with no
+`moonId` (predates moons / backfill never run) is treated as belonging to the oldest
+moon. Anything counting what's *on screen* must use `scene.js`'s `renderedStarCount()`,
 not `memories.length`.
 
-Navigating between planets (Phase 4) goes through `scene.js`'s `showPlanet(index)`, which
+Navigating between moons (Phase 4) goes through `scene.js`'s `showMoon(index)`, which
 rebuilds the ring's meshes and leaves `memories` alone. The two portals are whole worlds
 hanging 26 units out at ±100° and ~20° of elevation — a lit `MeshLambertMaterial` sphere,
 an atmosphere shell, and a caption plate beside it — each a `THREE.Group` under
 `portalGroup`, outside `cardGroup`, so ring slot indexing and `renderedStarCount()` keep
 counting stars only. The `pointerup` raycast collects the visible portals' sphere and
 caption meshes alongside `cardGroup.children` and routes portal hits to
-`setOnPortalClick`'s callback (wired up in `galaxyPicker.js`, which owns the hyperspace
-transition). A "next" portal with no successor planet renders as a grey, padlocked ghost
+`setOnPortalClick`'s callback (wired up in `planetPicker.js`, which owns the hyperspace
+transition). A "next" portal with no successor moon renders as a grey, padlocked ghost
 of a world and does nothing but swell when clicked.
 
 Two things about the portals are load-bearing and easy to undo by accident. Their light is
 a `PointLight` above the viewer, not a directional one: both portals hang off to the
 sides, and any single direction leaves one of them a black disc. And the caption sits
-*beside* its planet because it doesn't fit above or below — the clear sky between the top
+*beside* its moon because it doesn't fit above or below — the clear sky between the top
 row of stars (~13.7° elevation) and the top of the 55° FOV (27.5°) is only ~14° tall, and
-the planet nearly fills it; above puts the caption off-screen, below puts it behind the
+the moon nearly fills it; above puts the caption off-screen, below puts it behind the
 card ring.
 
 Ring layout (`ringSlot`/`applyRingLayout` in `scene.js`) is a function of how many stars
 are in the ring, not of arrival order, so everything is re-spaced whenever that count
 changes — adding closes ranks, deleting closes the gap. One row at eye level up to
 `ROW_CAPACITY` (18), two rows past that sharing a single angular step so stars line up in
-columns. `MAX_ANGULAR_STEP` (26°) stops a part-full planet from going hollow: below it the
+columns. `MAX_ANGULAR_STEP` (26°) stops a part-full moon from going hollow: below it the
 ring closes into a full circle, above it the stars form an arc centred on where you're
 facing. Don't reintroduce a fixed per-index slot grid — the old one put levels 0 and 2 on
 the same angles 1.6 apart with cards 1.8 tall, so they always overlapped.
 
-Because the server decides which planet a new star lands on, `memoryForm.js` waits for
+Because the server decides which moon a new star lands on, `memoryForm.js` waits for
 `POST /api/memories` to answer before drawing anything: `scene.js`'s `placeNewStar()`
-refetches the planet list and only adds the mesh when the star landed on the viewed
-planet, otherwise it toasts where it went. Don't go back to rendering the new star
+refetches the moon list and only adds the mesh when the star landed on the viewed
+moon, otherwise it toasts where it went. Don't go back to rendering the new star
 optimistically — that's the bug it fixes.
+
+The picker's own planet icons (`.planet`/`.planet-body`/`.planet-label` in
+`planetPicker.js`/`styles.css`) are unrelated to the ring's moon portals despite sharing
+the word "planet" in their class names — one is the outer solar-system view, the other
+is inside a planet's own gallery. Don't confuse `.planet-label` (a picker icon's caption)
+with `#moonLabel`/`.moon-label` (the topbar's "which moon am I on" readout).
 
 ## Data safety
 
@@ -168,12 +192,22 @@ optimistically — that's the bug it fixes.
 disposable. `docs/` and `node/` are also gitignored (present locally, not tracked).
 `backups/` (zipped snapshots of `data/`) is a sibling of `data/`, also not tracked.
 
-Need a galaxy with more than one planet to test against? Use `data.test-fixture/`
-(gitignored, synthetic, see its README) — copy it over a **separate checkout's** `data/`.
-Do not reach for the `DATA_DIR` env var to isolate test writes: on 2026-08-08 an override
-reported the right path at startup and the seeded records landed in the real `data/`
-anyway. Take the `data.bak-<timestamp>/` copy before any phase that writes to `data/` —
-that's what made that mishap recoverable.
+Need a planet with more than one moon to test against? Use `data.test-fixture/`
+(gitignored, synthetic, migrated to the current planet/moon schema as of Phase 11 —
+see its README) — copy it over a **separate checkout's** `data/`. Do not reach for the
+`DATA_DIR` env var to isolate test writes: on 2026-08-08 an override reported the right
+path at startup and the seeded records landed in the real `data/` anyway. Take the
+`data.bak-<timestamp>/` copy before any phase that writes to `data/` — that's what made
+that mishap recoverable.
+
+**Renaming code without renaming data is its own hazard.** Phase 11 briefly had the
+code's `PLANETS_DIR` constant (meant for the new top-level records) pointing at the same
+on-disk `data/planets/` folder that, pre-migration, held the *old* planet-meaning-moon
+records — so a server started against real data before the migration ran read the wrong
+directory (harmless, since it was a read-only GET, but exactly why the migration ran
+against a testbed copy first and the real run happened only after that passed). If a
+future rename ever collides two record types onto the same directory name again, migrate
+the data (or at least back it up) *before* pointing the renamed code at real `data/`.
 
 The separate checkout that works cleanly (used for Phases 4–5, real `data/` verified
 untouched afterwards): `git worktree add --detach <scratch>/testbed HEAD`, copy
@@ -198,10 +232,13 @@ turning any item there into a real phase; don't treat it as pre-approved.
 [docs/PLAN.md](docs/PLAN.md) is the active, scoped plan currently being executed
 (phases 1–10, "Galaxy scaling — stars & planets" plus four items later scoped in from
 PLAN_NEXT.md: memory editing, restore-from-backup UI, touch controls, inline undo
-toast). Phases 1 (rename), 2 (planets data model, backend-only), 3 (frontend: render
-only the viewed planet), 4 (planet navigation portals) and 5 (hyperspace escalation) are
-done; Phase 6 (milestone star-shaped visual) is next. Once all its phases are complete,
-fold it into PLAN_ARCHIVE.md the same way the previous PLAN.md was.
+toast; plus phases 11–12, scoped 2026-08-09 from user feedback on Phase 4's portals).
+Phases 1 (rename to "star"), 2 (moons data model, backend-only), 3 (frontend: render
+only the viewed moon), 4 (moon navigation portals), 5 (hyperspace escalation) and 11
+(terminology: galaxy → planet, [old] planet → moon, including the on-disk data) are
+done; Phase 6 (milestone star-shaped visual) and Phase 12 (moons visible in the picker)
+are next. Once all its phases are complete, fold it into PLAN_ARCHIVE.md the same way
+the previous PLAN.md was.
 
 The ground rules below (applied throughout the completed plan) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets

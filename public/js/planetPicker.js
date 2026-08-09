@@ -1,15 +1,15 @@
 /* ============================================================
-   GALAXY PICKER — solar system rendering, orbit math, new-galaxy
-   form, hyperspace transition, edit-galaxy panel
+   PLANET PICKER — solar system rendering, orbit math, new-planet
+   form, hyperspace transition, edit-planet panel
 ============================================================ */
-import { createGalaxyRemote, deleteGalaxyRemote, loadTrashedMemories, restoreMemory, deleteMemoryForever } from './api.js';
+import { createPlanetRemote, deletePlanetRemote, loadTrashedMemories, restoreMemory, deleteMemoryForever } from './api.js';
 import { showStorageWarning } from './util.js';
-import { clearGalleryScene, loadGalaxyMemories, showLoadingPlaceholders, setOnPortalClick, showPlanet } from './scene.js';
-import { currentGalaxy, galaxiesCache, setCurrentGalaxy, setGalaxiesCache } from './state.js';
+import { clearGalleryScene, loadPlanetMemories, showLoadingPlaceholders, setOnPortalClick, showMoon } from './scene.js';
+import { currentPlanet, planetsCache, setCurrentPlanet, setPlanetsCache } from './state.js';
 import { playUiSound, prefersReducedMotion } from './audioManager.js';
 
 /* ============================================================
-   GALAXY PICKER — twinkling background stars
+   PLANET PICKER — twinkling background stars
 ============================================================ */
 (function setupPickerStars() {
   const starsContainer = document.getElementById('startStars');
@@ -85,7 +85,7 @@ import { playUiSound, prefersReducedMotion } from './audioManager.js';
    -----------------------------------------------------------
    A full-screen canvas overlay drawing streaking starlines that
    radiate outward from the center, accelerating, then fading —
-   used when entering or leaving a galaxy.
+   used when entering or leaving a planet.
 ============================================================ */
 const hyperspaceCanvas = document.getElementById('hyperspaceCanvas');
 const hyCtx = hyperspaceCanvas.getContext('2d');
@@ -97,13 +97,13 @@ function resizeHyperspaceCanvas() {
 resizeHyperspaceCanvas();
 window.addEventListener('resize', resizeHyperspaceCanvas);
 
-/* Two intensities of the same effect. `galaxy` is the original, unchanged:
-   crossing between galaxies. `planet` is the escalation used for hopping
-   between planets *within* one galaxy — longer, denser, and drawn in the
+/* Two intensities of the same effect. `planet` is the original, unchanged:
+   crossing between planets. `moon` is the escalation used for hopping
+   between moons *within* one planet — longer, denser, and drawn in the
    warm/rose/violet range instead of a single warm white, so the two trips
    don't feel interchangeable. */
 const HYPERSPACE_PRESETS = {
-  galaxy: {
+  planet: {
     duration: 1100,
     starCount: 220,
     speedScale: 1,
@@ -112,7 +112,7 @@ const HYPERSPACE_PRESETS = {
     flashColor: '255, 250, 240',
     flashMax: 0.5
   },
-  planet: {
+  moon: {
     duration: 1750,
     starCount: 420,
     speedScale: 1.35,
@@ -126,12 +126,12 @@ const HYPERSPACE_PRESETS = {
 // Plays the hyperspace effect at the named intensity. Calls onMid halfway
 // through (the moment of maximum streak/whiteout — good time to swap scene
 // content underneath), and resolves once the effect has fully faded out.
-function playHyperspace(onMid, kind = 'galaxy') {
+function playHyperspace(onMid, kind = 'planet') {
   return new Promise((resolve) => {
     // A stated motion preference outranks the drama: fall back to the shorter,
     // sparser trip rather than escalating.
-    const preset = HYPERSPACE_PRESETS[prefersReducedMotion() ? 'galaxy' : kind]
-      || HYPERSPACE_PRESETS.galaxy;
+    const preset = HYPERSPACE_PRESETS[prefersReducedMotion() ? 'planet' : kind]
+      || HYPERSPACE_PRESETS.planet;
     const DURATION = preset.duration;
     const STAR_COUNT = preset.starCount;
     const cx = hyperspaceCanvas.width / 2;
@@ -208,17 +208,17 @@ function playHyperspace(onMid, kind = 'galaxy') {
 }
 
 /* ============================================================
-   GALAXY PICKER UI — solar system
+   PLANET PICKER UI — solar system
 ============================================================ */
-const galaxyPicker = document.getElementById('galaxyPicker');
+const planetPicker = document.getElementById('planetPicker');
 const orbitsContainer = document.getElementById('orbits');
-const newGalaxyForm = document.getElementById('newGalaxyForm');
-const newGalaxyName = document.getElementById('newGalaxyName');
+const newPlanetForm = document.getElementById('newPlanetForm');
+const newPlanetName = document.getElementById('newPlanetName');
 const colorRow = document.getElementById('colorRow');
-const cancelGalaxyBtn = document.getElementById('cancelGalaxyBtn');
-const createGalaxyBtn = document.getElementById('createGalaxyBtn');
-const galaxyTitleEl = document.getElementById('galaxyTitle');
-const backToGalaxiesBtn = document.getElementById('backToGalaxiesBtn');
+const cancelPlanetBtn = document.getElementById('cancelPlanetBtn');
+const createPlanetBtn = document.getElementById('createPlanetBtn');
+const planetTitleEl = document.getElementById('planetTitle');
+const backToPlanetsBtn = document.getElementById('backToPlanetsBtn');
 const topbar = document.getElementById('topbar');
 
 const ringRow = document.getElementById('ringRow');
@@ -240,52 +240,52 @@ ringRow.addEventListener('click', (e) => {
   selectedRing = parseInt(dot.dataset.ring, 10);
 });
 
-function openNewGalaxyForm() {
-  newGalaxyForm.classList.remove('hidden');
-  newGalaxyName.focus();
+function openNewPlanetForm() {
+  newPlanetForm.classList.remove('hidden');
+  newPlanetName.focus();
 }
 
-cancelGalaxyBtn.addEventListener('click', () => {
-  newGalaxyForm.classList.add('hidden');
-  newGalaxyName.value = '';
-  createGalaxyBtn.disabled = true;
+cancelPlanetBtn.addEventListener('click', () => {
+  newPlanetForm.classList.add('hidden');
+  newPlanetName.value = '';
+  createPlanetBtn.disabled = true;
 });
 
-newGalaxyName.addEventListener('input', () => {
-  createGalaxyBtn.disabled = newGalaxyName.value.trim().length === 0;
+newPlanetName.addEventListener('input', () => {
+  createPlanetBtn.disabled = newPlanetName.value.trim().length === 0;
 });
 
-createGalaxyBtn.addEventListener('click', async () => {
-  const name = newGalaxyName.value.trim();
+createPlanetBtn.addEventListener('click', async () => {
+  const name = newPlanetName.value.trim();
   if (!name) return;
-  const galaxy = {
+  const planet = {
     id: `gal-${Date.now()}`,
     name,
     accentColor: selectedColor,
     ring: selectedRing
   };
-  createGalaxyBtn.disabled = true;
+  createPlanetBtn.disabled = true;
   try {
-    await createGalaxyRemote(galaxy);
-    galaxiesCache.push(galaxy);
+    await createPlanetRemote(planet);
+    planetsCache.push(planet);
     renderSolarSystem();
-    newGalaxyForm.classList.add('hidden');
-    newGalaxyName.value = '';
-    createGalaxyBtn.disabled = true;
+    newPlanetForm.classList.add('hidden');
+    newPlanetName.value = '';
+    createPlanetBtn.disabled = true;
   } catch (e) {
-    console.warn('Could not create galaxy', e);
-    showStorageWarning('couldn\'t create that galaxy — check the gallery server and try again.');
-    createGalaxyBtn.disabled = false;
+    console.warn('Could not create planet', e);
+    showStorageWarning('couldn\'t create that planet — check the gallery server and try again.');
+    createPlanetBtn.disabled = false;
   }
 });
 
 // Four fixed orbital radii (px), always drawn, centered on the sun.
-// Ring index 0 is reserved for the "+ new galaxy" world. Galaxies
+// Ring index 0 is reserved for the "+ new planet" icon. Planets
 // choose from rings 1-3 (displayed as options "1", "2", "3" — the ring
-// just outside the new-galaxy ring, and so on outward).
+// just outside the new-planet ring, and so on outward).
 const RING_RADII = [90, 165, 240, 320];
-const WORLD_SIZES = [38, 32, 36, 30, 40, 34, 32, 38]; // px, cycling per world
-const NEW_GALAXY_RING = 0;
+const PLANET_SIZES = [38, 32, 36, 30, 40, 34, 32, 38]; // px, cycling per planet
+const NEW_PLANET_RING = 0;
 
 export function renderSolarSystem() {
   orbitsContainer.innerHTML = '';
@@ -300,35 +300,35 @@ export function renderSolarSystem() {
     orbitsContainer.appendChild(ring);
   });
 
-  // group galaxies by their assigned ring (default ring index 1, the
-  // innermost selectable ring) so multiple galaxies on the same ring
+  // group planets by their assigned ring (default ring index 1, the
+  // innermost selectable ring) so multiple planets on the same ring
   // spread out evenly around it
   const ringGroups = new Map();
-  galaxiesCache.forEach((g) => {
+  planetsCache.forEach((g) => {
     const ring = Number.isInteger(g.ring) && g.ring >= 1 && g.ring < RING_RADII.length ? g.ring : 1;
     if (!ringGroups.has(ring)) ringGroups.set(ring, []);
     ringGroups.get(ring).push(g);
   });
 
   let sizeIndex = 0;
-  ringGroups.forEach((galaxiesOnRing, ring) => {
+  ringGroups.forEach((planetsOnRing, ring) => {
     const radius = RING_RADII[ring];
     const duration = 26 + ring * 16;
     const direction = ring % 2 === 0 ? 'normal' : 'reverse';
-    const count = galaxiesOnRing.length;
+    const count = planetsOnRing.length;
 
-    galaxiesOnRing.forEach((g, idx) => {
+    planetsOnRing.forEach((g, idx) => {
       const startAngle = (idx / count) * 360 + ring * 23; // spread + per-ring offset
-      addWorld(g, radius, duration, direction, startAngle, WORLD_SIZES[sizeIndex % WORLD_SIZES.length]);
+      addPlanet(g, radius, duration, direction, startAngle, PLANET_SIZES[sizeIndex % PLANET_SIZES.length]);
       sizeIndex++;
     });
   });
 
-  // "+ new galaxy" world always orbits the innermost ring
-  addWorld({ __isNew: true }, RING_RADII[NEW_GALAXY_RING], 26 + NEW_GALAXY_RING * 16, 'normal', 180, 34);
+  // "+ new planet" icon always orbits the innermost ring
+  addPlanet({ __isNew: true }, RING_RADII[NEW_PLANET_RING], 26 + NEW_PLANET_RING * 16, 'normal', 180, 34);
 }
 
-function addWorld(g, radius, duration, direction, startAngle, size) {
+function addPlanet(g, radius, duration, direction, startAngle, size) {
   // rotating container
   const spin = document.createElement('div');
   spin.className = 'orbit-spin';
@@ -344,15 +344,15 @@ function addWorld(g, radius, duration, direction, startAngle, size) {
   offset.className = 'orbit-offset';
   offset.style.transform = `translateX(${radius}px)`;
 
-  // counter-rotating world, keeps its label upright
-  const world = document.createElement('div');
-  world.className = 'world';
-  world.style.animationDuration = `${duration}s`;
-  world.style.animationDirection = direction;
-  world.style.animationDelay = delay;
+  // counter-rotating planet icon, keeps its label upright
+  const planet = document.createElement('div');
+  planet.className = 'planet';
+  planet.style.animationDuration = `${duration}s`;
+  planet.style.animationDirection = direction;
+  planet.style.animationDelay = delay;
 
   const body = document.createElement('div');
-  body.className = 'world-body';
+  body.className = 'planet-body';
   body.style.width = `${size}px`;
   body.style.height = `${size}px`;
   body.style.position = 'absolute';
@@ -361,111 +361,111 @@ function addWorld(g, radius, duration, direction, startAngle, size) {
   body.style.transform = 'translate(-50%, -50%)';
 
   const label = document.createElement('span');
-  label.className = 'world-label';
+  label.className = 'planet-label';
 
   if (g.__isNew) {
-    world.classList.add('new-galaxy-world');
+    planet.classList.add('new-planet');
     body.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
     body.style.display = 'flex';
     body.style.alignItems = 'center';
     body.style.justifyContent = 'center';
-    label.textContent = 'new galaxy';
+    label.textContent = 'new planet';
 
-    world.appendChild(body);
-    world.appendChild(label);
-    world.addEventListener('click', () => openNewGalaxyForm());
+    planet.appendChild(body);
+    planet.appendChild(label);
+    planet.addEventListener('click', () => openNewPlanetForm());
   } else {
     const color = g.accentColor || '#ffd9a0';
     body.style.background = `radial-gradient(circle at 35% 35%, #fff, ${color} 55%, ${color} 100%)`;
     body.style.boxShadow = `0 0 18px 6px ${color}66, 0 0 36px 14px ${color}33`;
     label.textContent = g.name;
 
-    world.appendChild(body);
-    world.appendChild(label);
-    world.addEventListener('click', () => selectGalaxy(g));
+    planet.appendChild(body);
+    planet.appendChild(label);
+    planet.addEventListener('click', () => selectPlanet(g));
   }
 
-  offset.appendChild(world);
+  offset.appendChild(planet);
   spin.appendChild(offset);
   orbitsContainer.appendChild(spin);
 }
 
-// Enter a galaxy: hyperspace transition, then swap content underneath.
-async function selectGalaxy(galaxy) {
+// Enter a planet: hyperspace transition, then swap content underneath.
+async function selectPlanet(planet) {
   playUiSound('select');
-  setCurrentGalaxy(galaxy);
+  setCurrentPlanet(planet);
 
   await playHyperspace(() => {
     // mid-transition: swap content while the screen is at peak whiteout
-    galaxyTitleEl.textContent = `${galaxy.name.toLowerCase()}'s memories`;
-    galaxyPicker.classList.add('fading');
+    planetTitleEl.textContent = `${planet.name.toLowerCase()}'s memories`;
+    planetPicker.classList.add('fading');
     topbar.style.display = '';
     clearGalleryScene();
     showLoadingPlaceholders();
   });
 
-  galaxyPicker.classList.add('hidden');
-  await loadGalaxyMemories(galaxy.id);
+  planetPicker.classList.add('hidden');
+  await loadPlanetMemories(planet.id);
 }
 
-// Travel to another of the open galaxy's planets — the same "swap the scene
-// while the screen is whited out" pattern as entering a galaxy, one planet's
-// stars in place of one galaxy's memories. The hyperspace canvas doesn't take
+// Travel to another of the open planet's moons — the same "swap the scene
+// while the screen is whited out" pattern as entering a planet, one moon's
+// stars in place of one planet's memories. The hyperspace canvas doesn't take
 // pointer events, so a second portal click during the trip would otherwise
 // land on whatever is underneath.
 let travelling = false;
-setOnPortalClick(async (planetIndex) => {
-  if (travelling || planetIndex === null) return;
+setOnPortalClick(async (moonIndex) => {
+  if (travelling || moonIndex === null) return;
   travelling = true;
   try {
-    await playHyperspace(() => showPlanet(planetIndex), 'planet');
+    await playHyperspace(() => showMoon(moonIndex), 'moon');
   } finally {
     travelling = false;
   }
 });
 
-// Return to the galaxy picker.
-async function showGalaxyPicker() {
+// Return to the planet picker.
+async function showPlanetPicker() {
   await playHyperspace(() => {
     clearGalleryScene();
     topbar.style.display = 'none';
-    galaxyPicker.classList.remove('hidden');
-    galaxyPicker.classList.remove('fading');
-    setCurrentGalaxy(null);
+    planetPicker.classList.remove('hidden');
+    planetPicker.classList.remove('fading');
+    setCurrentPlanet(null);
   });
   renderSolarSystem();
 }
 
-backToGalaxiesBtn.addEventListener('click', () => {
-  showGalaxyPicker();
+backToPlanetsBtn.addEventListener('click', () => {
+  showPlanetPicker();
 });
 
 /* ============================================================
-   EDIT GALAXY PANEL
+   EDIT PLANET PANEL
 ============================================================ */
-const editGalaxyOverlay = document.getElementById('editGalaxyOverlay');
-const editGalaxyBtn = document.getElementById('editGalaxyBtn');
-const editGalaxyName = document.getElementById('editGalaxyName');
+const editPlanetOverlay = document.getElementById('editPlanetOverlay');
+const editPlanetBtn = document.getElementById('editPlanetBtn');
+const editPlanetName = document.getElementById('editPlanetName');
 const editColorRow = document.getElementById('editColorRow');
 const editRingRow = document.getElementById('editRingRow');
-const cancelEditGalaxyBtn = document.getElementById('cancelEditGalaxyBtn');
-const saveEditGalaxyBtn = document.getElementById('saveEditGalaxyBtn');
-const deleteGalaxyBtn = document.getElementById('deleteGalaxyBtn');
-const deleteGalaxyConfirmRow = document.getElementById('deleteGalaxyConfirmRow');
-const cancelDeleteGalaxyBtn = document.getElementById('cancelDeleteGalaxyBtn');
-const confirmDeleteGalaxyBtn = document.getElementById('confirmDeleteGalaxyBtn');
+const cancelEditPlanetBtn = document.getElementById('cancelEditPlanetBtn');
+const saveEditPlanetBtn = document.getElementById('saveEditPlanetBtn');
+const deletePlanetBtn = document.getElementById('deletePlanetBtn');
+const deletePlanetConfirmRow = document.getElementById('deletePlanetConfirmRow');
+const cancelDeletePlanetBtn = document.getElementById('cancelDeletePlanetBtn');
+const confirmDeletePlanetBtn = document.getElementById('confirmDeletePlanetBtn');
 const trashList = document.getElementById('trashList');
 
 let editSelectedColor = '#ffd9a0';
 let editSelectedRing = 1;
 
-// Loads and renders the currently-open galaxy's trashed memories, with
+// Loads and renders the currently-open planet's trashed memories, with
 // "restore" / "delete forever" actions on each.
 async function renderTrash() {
-  if (!currentGalaxy) return;
+  if (!currentPlanet) return;
   trashList.innerHTML = '<div class="trash-empty">loading…</div>';
   try {
-    const trashed = await loadTrashedMemories(currentGalaxy.id);
+    const trashed = await loadTrashedMemories(currentPlanet.id);
     if (trashed.length === 0) {
       trashList.innerHTML = '<div class="trash-empty">nothing in the trash</div>';
       return;
@@ -524,19 +524,19 @@ async function renderTrash() {
   }
 }
 
-editGalaxyBtn.addEventListener('click', () => {
-  if (!currentGalaxy) return;
-  editGalaxyName.value = currentGalaxy.name || '';
-  editSelectedColor = currentGalaxy.accentColor || '#ffd9a0';
-  editSelectedRing = (Number.isInteger(currentGalaxy.ring) && currentGalaxy.ring >= 1 && currentGalaxy.ring <= 3) ? currentGalaxy.ring : 1;
+editPlanetBtn.addEventListener('click', () => {
+  if (!currentPlanet) return;
+  editPlanetName.value = currentPlanet.name || '';
+  editSelectedColor = currentPlanet.accentColor || '#ffd9a0';
+  editSelectedRing = (Number.isInteger(currentPlanet.ring) && currentPlanet.ring >= 1 && currentPlanet.ring <= 3) ? currentPlanet.ring : 1;
 
   [...editColorRow.children].forEach(d => d.classList.toggle('active', d.dataset.color === editSelectedColor));
   [...editRingRow.children].forEach(d => d.classList.toggle('active', parseInt(d.dataset.ring, 10) === editSelectedRing));
-  deleteGalaxyBtn.style.display = '';
-  deleteGalaxyConfirmRow.style.display = 'none';
-  confirmDeleteGalaxyBtn.disabled = false;
-  cancelDeleteGalaxyBtn.disabled = false;
-  editGalaxyOverlay.classList.add('visible');
+  deletePlanetBtn.style.display = '';
+  deletePlanetConfirmRow.style.display = 'none';
+  confirmDeletePlanetBtn.disabled = false;
+  cancelDeletePlanetBtn.disabled = false;
+  editPlanetOverlay.classList.add('visible');
   renderTrash();
 });
 
@@ -554,68 +554,68 @@ editRingRow.addEventListener('click', (e) => {
   editSelectedRing = parseInt(dot.dataset.ring, 10);
 });
 
-function closeEditGalaxy() {
-  editGalaxyOverlay.classList.remove('visible');
+function closeEditPlanet() {
+  editPlanetOverlay.classList.remove('visible');
 }
 
-cancelEditGalaxyBtn.addEventListener('click', closeEditGalaxy);
-editGalaxyOverlay.addEventListener('click', (e) => {
-  if (e.target === editGalaxyOverlay) closeEditGalaxy();
+cancelEditPlanetBtn.addEventListener('click', closeEditPlanet);
+editPlanetOverlay.addEventListener('click', (e) => {
+  if (e.target === editPlanetOverlay) closeEditPlanet();
 });
 
-saveEditGalaxyBtn.addEventListener('click', async () => {
-  const name = editGalaxyName.value.trim();
-  if (!name || !currentGalaxy) return;
+saveEditPlanetBtn.addEventListener('click', async () => {
+  const name = editPlanetName.value.trim();
+  if (!name || !currentPlanet) return;
 
   const updated = {
-    id: currentGalaxy.id,
+    id: currentPlanet.id,
     name,
     accentColor: editSelectedColor,
     ring: editSelectedRing
   };
-  saveEditGalaxyBtn.disabled = true;
+  saveEditPlanetBtn.disabled = true;
   try {
-    await createGalaxyRemote(updated); // upserts by id
-    setCurrentGalaxy(updated);
-    setGalaxiesCache(galaxiesCache.map(g => g.id === updated.id ? updated : g));
-    galaxyTitleEl.textContent = `${name.toLowerCase()}'s memories`;
-    closeEditGalaxy();
+    await createPlanetRemote(updated); // upserts by id
+    setCurrentPlanet(updated);
+    setPlanetsCache(planetsCache.map(g => g.id === updated.id ? updated : g));
+    planetTitleEl.textContent = `${name.toLowerCase()}'s memories`;
+    closeEditPlanet();
   } catch (e) {
-    console.warn('Could not update galaxy', e);
+    console.warn('Could not update planet', e);
     showStorageWarning('couldn\'t save those changes — check the gallery server and try again.');
   } finally {
-    saveEditGalaxyBtn.disabled = false;
+    saveEditPlanetBtn.disabled = false;
   }
 });
 
-deleteGalaxyBtn.addEventListener('click', () => {
-  deleteGalaxyBtn.style.display = 'none';
-  deleteGalaxyConfirmRow.style.display = 'flex';
+deletePlanetBtn.addEventListener('click', () => {
+  deletePlanetBtn.style.display = 'none';
+  deletePlanetConfirmRow.style.display = 'flex';
 });
 
-cancelDeleteGalaxyBtn.addEventListener('click', () => {
-  deleteGalaxyConfirmRow.style.display = 'none';
-  deleteGalaxyBtn.style.display = '';
+cancelDeletePlanetBtn.addEventListener('click', () => {
+  deletePlanetConfirmRow.style.display = 'none';
+  deletePlanetBtn.style.display = '';
 });
 
-confirmDeleteGalaxyBtn.addEventListener('click', async () => {
-  if (!currentGalaxy) return;
-  confirmDeleteGalaxyBtn.disabled = true;
-  cancelDeleteGalaxyBtn.disabled = true;
+confirmDeletePlanetBtn.addEventListener('click', async () => {
+  if (!currentPlanet) return;
+  confirmDeletePlanetBtn.disabled = true;
+  cancelDeletePlanetBtn.disabled = true;
   try {
-    await deleteGalaxyRemote(currentGalaxy.id);
-    setGalaxiesCache(galaxiesCache.filter(g => g.id !== currentGalaxy.id));
-    closeEditGalaxy();
-    await showGalaxyPicker();
-    confirmDeleteGalaxyBtn.disabled = false;
-    cancelDeleteGalaxyBtn.disabled = false;
+    await deletePlanetRemote(currentPlanet.id);
+    setPlanetsCache(planetsCache.filter(g => g.id !== currentPlanet.id));
+    closeEditPlanet();
+    await showPlanetPicker();
+    confirmDeletePlanetBtn.disabled = false;
+    cancelDeletePlanetBtn.disabled = false;
 
-    deleteGalaxyConfirmRow.style.display = 'none';
-    deleteGalaxyBtn.style.display = '';
+    deletePlanetConfirmRow.style.display = 'none';
+    deletePlanetBtn.style.display = '';
   } catch (e) {
-    console.warn('Could not delete galaxy', e);
-    showStorageWarning('couldn\'t delete that galaxy — check the gallery server and try again.');
-    confirmDeleteGalaxyBtn.disabled = false;
-    cancelDeleteGalaxyBtn.disabled = false;
+    console.warn('Could not delete planet', e);
+    showStorageWarning('couldn\'t delete that planet — check the gallery server and try again.');
+    confirmDeletePlanetBtn.disabled = false;
+    cancelDeletePlanetBtn.disabled = false;
   }
 });

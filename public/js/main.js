@@ -1,13 +1,13 @@
 /* ============================================================
    MAIN — startup and wiring between modules
 ============================================================ */
-import { tryRestoreStorage, loadGalaxies, createBackupRemote } from './api.js';
+import { tryRestoreStorage, loadPlanets, createBackupRemote } from './api.js';
 import { showStorageWarning, showToast, updateStorageStatusUI } from './util.js';
-import { renderSolarSystem } from './galaxyPicker.js';
+import { renderSolarSystem } from './planetPicker.js';
 import './memoryForm.js';
 import './entryScreen.js';
 import './cardFlip.js';
-import { storageMode, setStorageMode, setGalaxiesCache } from './state.js';
+import { storageMode, setStorageMode, setPlanetsCache } from './state.js';
 import { isQuietMode, setQuietMode } from './audioManager.js';
 
 /* ============================================================
@@ -47,16 +47,16 @@ backupBtn.addEventListener('click', async () => {
 });
 
 /* ============================================================
-   STARTUP & GALAXY SWITCHING
+   STARTUP & PLANET SWITCHING
 ============================================================ */
 async function init() {
   setStorageMode(await tryRestoreStorage());
   updateStorageStatusUI(storageMode);
 
   try {
-    setGalaxiesCache(await loadGalaxies());
+    setPlanetsCache(await loadPlanets());
   } catch (e) {
-    console.warn('Could not load galaxies', e);
+    console.warn('Could not load planets', e);
     showStorageWarning('couldn\'t reach the gallery server — check that "npm start" is running, then reload.');
   }
   renderSolarSystem();
