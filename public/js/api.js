@@ -25,7 +25,9 @@ export async function loadPlanets() {
     throw new Error(`load failed (${resp.status})`);
   }
   const body = await resp.json();
-  return body.planets || [];
+  // moonCount (Phase 12) drives the picker's satellite dots; default to 0
+  // for safety if an older server response ever lacks the field.
+  return (body.planets || []).map(p => ({ ...p, moonCount: p.moonCount || 0 }));
 }
 
 export async function createPlanetRemote(planet) {

@@ -11,7 +11,19 @@ router.get('/', (req, res) => {
     const planets = readAllRecords(PLANETS_DIR)
       .slice()
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    res.json({ planets });
+
+    // One moon scan for all planets, rather than a per-planet request from
+    // the picker (which only needs the count, not each moon's full record).
+    const moonCounts = new Map();
+    readAllRecords(MOONS_DIR).forEach((m) => {
+      moonCounts.set(m.planetId, (moonCounts.get(m.planetId) || 0) + 1);
+    });
+    const withMoonCounts = planets.map((p) => ({
+      ...p,
+      moonCount: moonCounts.get(p.id) || 0
+    }));
+
+    res.json({ planets: withMoonCounts });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'failed to load planets' });

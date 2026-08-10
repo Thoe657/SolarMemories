@@ -259,12 +259,15 @@ turning any item there into a real phase; don't treat it as pre-approved.
 (phases 1–10, "Galaxy scaling — stars & planets" plus four items later scoped in from
 PLAN_NEXT.md: memory editing, restore-from-backup UI, touch controls, inline undo
 toast; plus phases 11–12, scoped 2026-08-09 from user feedback on Phase 4's portals).
-Phases 1 (rename to "star"), 2 (moons data model, backend-only), 3 (frontend: render
-only the viewed moon), 4 (moon navigation portals), 5 (hyperspace escalation), 6
-(milestone star-shaped visual) and 11 (terminology: galaxy → planet, [old] planet →
-moon, including the on-disk data) are done; Phase 12 (moons visible in the picker) is
-next. Once all its phases are complete, fold it into PLAN_ARCHIVE.md the same way the
-previous PLAN.md was.
+All twelve phases are now done: 1 (rename to "star"), 2 (moons data model,
+backend-only), 3 (frontend: render only the viewed moon), 4 (moon navigation portals),
+5 (hyperspace escalation), 6 (milestone star-shaped visual), 7 (memory editing), 8
+(restore-from-backup UI), 9 (touch controls), 10 (inline undo toast on delete), 11
+(terminology: galaxy → planet, [old] planet → moon, including the on-disk data), and 12
+(moons visible in the picker, as low-opacity orbiting satellite dots scaled to each
+planet's moon count). Now that all its phases are complete, docs/PLAN.md is ready to be
+folded into PLAN_ARCHIVE.md the same way the previous PLAN.md was — not done yet, left
+for the user to review first.
 
 The ground rules below (applied throughout the completed plan) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets

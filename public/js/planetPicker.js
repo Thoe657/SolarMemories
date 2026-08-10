@@ -287,6 +287,11 @@ const RING_RADII = [90, 165, 240, 320];
 const PLANET_SIZES = [38, 32, 36, 30, 40, 34, 32, 38]; // px, cycling per planet
 const NEW_PLANET_RING = 0;
 
+// Caps how many moon-satellite dots get drawn per planet (Phase 12) — a
+// planet with many moons still only shows a handful, so a very full one
+// reads as "lots" rather than smearing into a solid ring.
+const MAX_MOON_SATELLITES = 6;
+
 export function renderSolarSystem() {
   orbitsContainer.innerHTML = '';
 
@@ -379,6 +384,7 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
     body.style.background = `radial-gradient(circle at 35% 35%, #fff, ${color} 55%, ${color} 100%)`;
     body.style.boxShadow = `0 0 18px 6px ${color}66, 0 0 36px 14px ${color}33`;
     label.textContent = g.name;
+    addMoonSatellites(body, size, g.moonCount || 0);
 
     planet.appendChild(body);
     planet.appendChild(label);
@@ -388,6 +394,43 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
   offset.appendChild(planet);
   spin.appendChild(offset);
   orbitsContainer.appendChild(spin);
+}
+
+// One small dot per unlocked moon (capped at MAX_MOON_SATELLITES), each in
+// its own orbit container with its own radius/duration/starting phase.
+// Appended inside .planet-body rather than as a sibling: .planet-body's
+// parent (.planet) is already counter-rotating to cancel the outer
+// .orbit-spin's rotation and stay upright, so a satellite mounted here
+// orbits purely around the icon itself, unaffected by the icon's own
+// motion around the sun. Reuses the .orbit-spin/.orbit-rotate technique
+// (zero-size rotating pivot + a translateX offset) at a smaller scale,
+// collapsed into one element per dot since a plain circle needs no
+// separate "stay upright" counter-rotation layer the way the planet
+// icon + label do.
+function addMoonSatellites(body, planetSize, moonCount) {
+  const count = Math.min(moonCount, MAX_MOON_SATELLITES);
+  for (let i = 0; i < count; i++) {
+    const orbitRadius = planetSize / 2 + 4 + i * 3; // just outside the icon, growing per satellite
+    const orbitDuration = 4 + Math.random() * 5; // seconds -- fast enough to read as motion, not a sweep
+    const orbitDirection = i % 2 === 0 ? 'normal' : 'reverse';
+    const startPhase = Math.random() * 360;
+
+    const orbit = document.createElement('div');
+    orbit.className = 'planet-moon-orbit';
+    orbit.style.animationDuration = `${orbitDuration}s`;
+    orbit.style.animationDirection = orbitDirection;
+    orbit.style.animationDelay = `${-(startPhase / 360) * orbitDuration}s`;
+
+    const moon = document.createElement('div');
+    moon.className = 'planet-moon';
+    const moonSize = Math.max(2, planetSize * 0.1);
+    moon.style.width = `${moonSize}px`;
+    moon.style.height = `${moonSize}px`;
+    moon.style.transform = `translate(-50%, -50%) translateX(${orbitRadius}px)`;
+
+    orbit.appendChild(moon);
+    body.appendChild(orbit);
+  }
 }
 
 // Enter a planet: hyperspace transition, then swap content underneath.
