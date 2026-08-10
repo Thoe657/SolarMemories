@@ -1,26 +1,33 @@
 # Session log
 
-## 2026-08-09 — Phases 4/5/11: portals, hyperspace escalation, planet/moon rename
-Completed: Built Phase 4 (moon-navigation portals, rendered as distant lit planets after
-user feedback), Phase 5 (hyperspace escalation for moon-to-moon travel), and Phase 11
-(renamed galaxy→planet and old planet→moon across code, filenames, and the on-disk data,
-migrated for real against live data).
-Decisions: Sequenced Phase 11 as moon-first-then-planet at every layer — code, then the
-data migration — since the destination name ("planet") was already occupied; verified the
-full migration in an isolated `git worktree` testbed against a *copy* of real data before
-running it for real. Portal geometry (light source, caption placement) needed iteration by
-eye: settled on a `PointLight` above the viewer (a directional light left one portal a
-black disc) and captions beside rather than above/below the moon (the ~14° clear-sky band
-is too tight for both).
-Open issues & next steps: Phase 6 (milestone star shape) and Phase 12 (moons shown subtly
-in the picker, scoped from user feedback) are next, unstarted. Phase 8 (restore-from-
-backup, unstarted) will need to detect and migrate — or refuse — a pre-Phase-11-schema
-backup zip.
-Files touched: `public/js/` (scene.js, cards.js, planetPicker.js, state.js, api.js,
-memoryForm.js), `src/` (config.js, lib/validate.js, lib/moonNames.js, routes/planets.js,
-routes/memories.js), `scripts/rename-to-planets-moons.js` (new), `server.js`, `CLAUDE.md`;
-also real `data/` and `data.test-fixture/` (both gitignored) via the migration script.
-Commits: 34cce8a..c1a2676
+## 2026-08-10 — Phases 6,7,8,9,10,12: plan complete, folded into archive, pushed
+Completed: Implemented and committed the plan's remaining phases via sequential
+subagents — Phase 6 (milestone star cards), 7 (memory editing), 8 (restore-from-backup
+UI), 9 (touch tap-target fixes), 10 (undo toast), 12 (moon satellites in the picker) —
+completing all 12 phases of "Galaxy scaling"; folded `docs/PLAN.md` into
+`docs/PLAN_ARCHIVE.md` as "Plan 2" and pushed all 8 commits to `origin/main`.
+Decisions: User confirmed the ~40 `mem-test-*`/`planet-test-*` records found in real
+`data/` are a deliberate "Moons Demo" fixture, not pollution — left untouched rather than
+restoring from backup. A Phase 8 `git worktree remove` followed a Windows `node_modules`
+junction and deleted the real repo's `node_modules` (not `data/`); self-recovered via
+`npm install`, re-verified afterward.
+Open issues & next steps: No plan is currently active — `docs/PLAN.md` is reset to an
+empty placeholder; next work should come from `docs/PLAN_NEXT.md` once something's
+scoped. Several phases (7/9/10/12) couldn't be pixel-verified since the in-app browser
+pane never fires `requestAnimationFrame` — verified via direct function calls/API round-
+trips instead, now documented in `PLAN_ARCHIVE.md`'s Plan 2 cross-cutting notes.
+Files touched: `public/js/` (cards.js, cardFlip.js, memoryForm.js, scene.js, state.js,
+api.js, planetPicker.js, motionPreference.js), `public/index.html`, `public/css/
+styles.css`, `src/routes/{backup,planets,memories}.js`, `src/lib/zipBackup.js`,
+`CLAUDE.md`; `docs/PLAN.md`, `docs/archive/PLAN_ARCHIVE.md` (both gitignored).
+Commits: 4f6ceaa..6dc24ca
+
+## 2026-08-09 — Phases 4/5/11: portals, hyperspace escalation, planet/moon rename (archived — see docs/MEMORY.archive.md)
+Built moon-navigation portals (Phase 4), hyperspace escalation (Phase 5), and the
+galaxy→planet/planet→moon rename including on-disk data (Phase 11); portal
+PointLight/caption-placement rationale is now documented in CLAUDE.md's architecture
+section. Its open issues (Phase 6 star shape, Phase 12 picker satellites) are resolved
+as of the 2026-08-10 entry above.
 
 ## 2026-08-08 — Phase 3: frontend renders only the viewed planet's stars (archived — see docs/MEMORY.archive.md)
 Rendered only the viewed planet's stars, verified 28/35 on a 2-planet test set; flagged a

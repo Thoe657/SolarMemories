@@ -234,13 +234,18 @@ against a testbed copy first and the real run happened only after that passed). 
 future rename ever collides two record types onto the same directory name again, migrate
 the data (or at least back it up) *before* pointing the renamed code at real `data/`.
 
-The separate checkout that works cleanly (used for Phases 4–5, real `data/` verified
-untouched afterwards): `git worktree add --detach <scratch>/testbed HEAD`, copy
+The separate checkout that works cleanly (used for Phases 4–5–8, real `data/` verified
+untouched afterwards each time): `git worktree add --detach <scratch>/testbed HEAD`, copy
 `data.test-fixture/` to `<scratch>/testbed/data`, junction `node_modules` in, and patch
 that copy's `src/config.js` `PORT` to something other than 3000 so it can run alongside
 the real app. `DATA_DIR` resolves from `src/config.js`'s own `__dirname`, so the testbed
-server reads and writes only its own `data/` regardless of cwd. Tear it down with
-`git worktree remove --force`.
+server reads and writes only its own `data/` regardless of cwd. **Junctioned
+`node_modules` gotcha, found during Phase 8**: `git worktree remove --force` can follow
+that junction and delete the *real* repo's `node_modules` contents, not just the
+worktree's copy — not `data/`, so not a personal-data hazard, but it breaks `npm start`
+until `npm install` is re-run. Unlink/remove the junction before running
+`git worktree remove`, or just re-run `npm install` afterward and verify `node_modules`
+before trusting the app boots.
 
 ## Development plan
 
