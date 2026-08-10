@@ -4,23 +4,83 @@
    positioned over the card's on-screen rect with the full readable
    content (text, audio, related-memory chips).
 ============================================================ */
-import { deleteMemory as deleteMemoryRemote } from './api.js';
+import { deleteMemory as deleteMemoryRemote, restoreMemory as restoreMemoryRemote } from './api.js';
 import { escapeHtml, showStorageWarning } from './util.js';
 import { formatDate, makeCardBackTexture } from './cards.js';
-import { removeMemoryFromScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount } from './scene.js';
-import { memories } from './state.js';
+import { removeMemoryFromScene, addMemoryToScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount } from './scene.js';
+import { memories, currentMoons, currentMoonIndex } from './state.js';
 import { openAddForm } from './memoryForm.js';
 
 const panel = document.getElementById('cardFlipPanel');
+const undoToast = document.getElementById('undoToast');
+const undoToastMsg = document.getElementById('undoToastMsg');
+const undoToastBtn = document.getElementById('undoToastBtn');
 
 const FLIP_DURATION = 400; // ms, matches the plan's "~400ms"
 const FADE_DURATION = 300; // ms, matches the panel's CSS opacity transition
+// Longer than backupToast's 3.2s (Phase 10) -- this one has an action to
+// take, not just a message to read.
+const UNDO_TOAST_DURATION = 6000;
 
 // 'idle' | 'opening' | 'open' | 'closing' -- guards against re-entry (rapid
 // double-click, clicking another card while one is already open, etc).
 let state = 'idle';
 let flippedMesh = null; // the mesh actually being flip-animated
 let displayedMemory = null; // whichever memory's content is currently shown
+
+/* ============================================================
+   INLINE UNDO TOAST (Phase 10) — complements, doesn't replace, the
+   trash panel: a faster same-session "oops" path so deleting a
+   memory doesn't require opening trash to get it back. `deletedMemory`
+   is the just-deleted memory object itself (not just its id), since
+   deleteMemoryAndClose() already spliced it out of `memories` and its
+   mesh is gone -- undo needs the full object back to symmetrically
+   re-add it to both. A second delete before the first's timer expires
+   simply replaces the pending one -- last delete wins the undo slot;
+   the trash panel remains the reliable path for anything older.
+============================================================ */
+let undoToastTimer = null;
+let deletedMemory = null;
+
+function hideUndoToast() {
+  undoToast.classList.remove('visible');
+  clearTimeout(undoToastTimer);
+  undoToastTimer = null;
+  deletedMemory = null;
+}
+
+function showUndoToast(memory) {
+  deletedMemory = memory;
+  undoToastMsg.textContent = `deleted "${memory.title || 'untitled memory'}"`;
+  undoToastBtn.disabled = false;
+  undoToast.classList.add('visible');
+  clearTimeout(undoToastTimer);
+  undoToastTimer = setTimeout(hideUndoToast, UNDO_TOAST_DURATION);
+}
+
+undoToastBtn.addEventListener('click', async () => {
+  const memory = deletedMemory;
+  if (!memory) return;
+  hideUndoToast();
+  undoToastBtn.disabled = true;
+  try {
+    await restoreMemoryRemote(memory.id);
+    memories.push(memory);
+    // Only draw it back into the ring if it belongs to the moon currently
+    // being viewed -- same check placeNewStar() uses for a freshly created
+    // star, so undo can't paint a star from a different moon into the
+    // wrong ring if the viewer navigated moons while the toast was up.
+    const viewed = currentMoons.find((p) => p.index === currentMoonIndex);
+    if (!memory.moonId || !viewed || memory.moonId === viewed.id) {
+      addMemoryToScene(memory);
+    }
+  } catch (e) {
+    console.warn('Could not undo delete', e);
+    showStorageWarning('couldn\'t undo that delete — it\'s still in the trash panel, though.');
+  } finally {
+    undoToastBtn.disabled = false;
+  }
+});
 
 function easeInOutQuad(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -201,6 +261,8 @@ async function deleteMemoryAndClose(memory) {
   if (renderedStarCount() === 0) {
     document.getElementById('emptyHint').classList.remove('hidden');
   }
+
+  showUndoToast(memory);
 
   await closeCard();
 }

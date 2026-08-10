@@ -994,6 +994,34 @@
     color: #ffd9a0;
   }
 
+  /* ---------- Undo toast (Phase 10) ---------- */
+  /* .toast's own pointer-events: none keeps the base toast unclickable
+     (fine for backupToast, which is a plain message); the undo button
+     opts itself back in explicitly since this toast needs to be tappable. */
+  .toast-action {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 8px 8px 18px;
+  }
+
+  .toast-undo-btn {
+    pointer-events: auto;
+    background: var(--accent-deep);
+    color: var(--light-glow);
+    border: none;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .toast-undo-btn:hover { filter: brightness(1.08); }
+  .toast-undo-btn:disabled { opacity: 0.6; cursor: default; }
+
   /* ---------- Milestone toggle (add-memory form) ---------- */
   .milestone-toggle {
     display: flex;
