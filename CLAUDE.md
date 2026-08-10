@@ -257,7 +257,13 @@ of feature/perf phases), and Plan 2, "Galaxy scaling — stars & planets," phase
 them, plus four items scoped in from PLAN_NEXT.md along the way: memory editing,
 restore-from-backup UI, touch controls, inline undo toast; plus a terminology rename —
 galaxy → planet, planet → moon, including the on-disk data — and moons becoming visible
-in the picker). No plan is currently active.
+in the picker).
+
+Plan 3, "Performance & smoothness (low-end PCs first)," phases 1–9, is scoped in
+[docs/PLAN.md](docs/PLAN.md) and **active** — no phase has been implemented yet. It
+carries a measured baseline of what's actually slow; read that table before optimising
+anything, since several findings (the scene rendering behind the entry screen, 240
+fairy-light draw calls, a 7.2MB payload for a 4-star planet) are invisible in a diff.
 
 [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md) lists candidate future work (PWA/service worker,
 native macOS packaging, entry-screen Exit button, PIN/passcode lock, PDF keepsake
@@ -265,9 +271,9 @@ export, manual card reordering) that is **not yet scoped** — brainstorm/discus
 turning any item there into a real phase; don't treat it as pre-approved.
 
 [docs/PLAN.md](docs/PLAN.md) is reused as the spec for whichever plan is currently
-active, and is empty when nothing is scoped (as now) — the next scoped plan replaces
-its contents. Don't mistake an empty `PLAN.md` for there being no project history; it's
-all in `PLAN_ARCHIVE.md`.
+active (Plan 3, above), and is empty when nothing is scoped — the next scoped plan
+replaces its contents. Don't mistake an empty `PLAN.md` for there being no project
+history; it's all in `PLAN_ARCHIVE.md`.
 
 The ground rules below (applied throughout both completed plans) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets
