@@ -12,10 +12,31 @@ const canvas = document.getElementById('entryScreenCanvas');
 const ctx = canvas.getContext('2d');
 const enterBtn = document.getElementById('entryEnterBtn');
 
+/* Backing store is a quarter of the viewport in each axis and CSS stretches it
+   back up (#entryScreenCanvas is inset:0 / 100%×100%, so the upscale is free).
+   Everything drawn here is a soft radial gradient with no edge to lose, so
+   sixteen times fewer pixel writes costs nothing visually — and this canvas
+   used to fill the whole viewport with black plus three full-viewport
+   gradients on every single frame, roughly 8M pixel writes at 1080p, as the
+   app's first impression on the slowest machine it will ever run on. */
+const RESOLUTION_SCALE = 0.25;
+
+/* ~10 redraws a second. The blobs drift on a ~5-minute cycle (speeds of
+   0.015–0.02 rad/s), so consecutive frames at display rate are visually
+   identical — the motion being animated is far slower than the rate it was
+   being animated at. Combined with the scale above this is ~100× less pixel
+   work per second. */
+const DRAW_INTERVAL_MS = 100;
+
 let width = 0, height = 0;
+// -Infinity, not 0: the first call comes in with now=0, and a real timestamp
+// minus 0 must not be mistaken for "already drawn recently".
+let lastDrawAt = -Infinity;
+
 function resize() {
-  width = canvas.width = window.innerWidth;
-  height = canvas.height = window.innerHeight;
+  width = canvas.width = Math.max(1, Math.round(window.innerWidth * RESOLUTION_SCALE));
+  height = canvas.height = Math.max(1, Math.round(window.innerHeight * RESOLUTION_SCALE));
+  lastDrawAt = -Infinity; // resizing a canvas clears it — redraw on the next frame, not in 100ms
 }
 resize();
 window.addEventListener('resize', resize);
@@ -40,6 +61,13 @@ let animId = null;
 let running = true;
 
 function draw(now = 0) {
+  // The rAF chain is kept at display rate and the *work* is what's throttled,
+  // so a resize still repaints on the very next frame rather than whenever the
+  // accumulator next comes round.
+  if (running) animId = requestAnimationFrame(draw);
+  if (now - lastDrawAt < DRAW_INTERVAL_MS) return;
+  lastDrawAt = now;
+
   const t = now / 1000;
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, width, height);
@@ -50,11 +78,13 @@ function draw(now = 0) {
     const y = (b.baseY + Math.cos(t * b.speed * 0.8 + b.phase) * 0.04) * height;
     paintGlow(x, y, b.r * maxDim, b.color, b.alpha);
   });
-
-  if (running) animId = requestAnimationFrame(draw);
 }
 draw();
 
+// Deliberately does not wake the Three.js scene: what this reveals is the
+// planet picker, which is DOM, and the picker sits between here and any
+// planet. scene.js stays asleep until planetPicker.js's selectPlanet resumes
+// it mid-whiteout.
 function enter() {
   if (!running) return;
   running = false;

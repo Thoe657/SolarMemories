@@ -4,7 +4,7 @@
 ============================================================ */
 import { createPlanetRemote, deletePlanetRemote, loadTrashedMemories, restoreMemory, deleteMemoryForever } from './api.js';
 import { showStorageWarning } from './util.js';
-import { clearGalleryScene, loadPlanetMemories, showLoadingPlaceholders, setOnPortalClick, showMoon } from './scene.js';
+import { clearGalleryScene, loadPlanetMemories, showLoadingPlaceholders, setOnPortalClick, showMoon, pauseScene, resumeScene } from './scene.js';
 import { currentPlanet, planetsCache, setCurrentPlanet, setPlanetsCache } from './state.js';
 import { prefersReducedMotion } from './motionPreference.js';
 
@@ -444,6 +444,10 @@ async function selectPlanet(planet) {
     topbar.style.display = '';
     clearGalleryScene();
     showLoadingPlaceholders();
+    // The 3D scene sleeps while the entry screen and picker are up; wake it
+    // here, at the whiteout's peak, and after the placeholders exist so the
+    // single catch-up frame resumeScene() draws already has them in it.
+    resumeScene();
   });
 
   planetPicker.classList.add('hidden');
@@ -455,6 +459,9 @@ async function selectPlanet(planet) {
 // stars in place of one planet's memories. The hyperspace canvas doesn't take
 // pointer events, so a second portal click during the trip would otherwise
 // land on whatever is underneath.
+// Note it shares playHyperspace with selectPlanet/showPlanetPicker but must
+// NOT pause or resume: this trip starts and ends inside the planet view, and
+// pausing here would stop the ring rendering with nothing to switch it back on.
 let travelling = false;
 setOnPortalClick(async (moonIndex) => {
   if (travelling || moonIndex === null) return;
@@ -474,6 +481,10 @@ async function showPlanetPicker() {
     planetPicker.classList.remove('hidden');
     planetPicker.classList.remove('fading');
     setCurrentPlanet(null);
+    // Back to a screen the 3D scene isn't part of. Pausing at the midpoint,
+    // not at the start or the end, means the last thing drawn before the
+    // scene stops is already hidden behind the whiteout.
+    pauseScene();
   });
   renderSolarSystem();
 }

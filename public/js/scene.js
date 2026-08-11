@@ -24,8 +24,9 @@ camera.position.set(0, 1.2, 9);
 
 /* ============================================================
    ADAPTIVE QUALITY — starts at full quality and, once the animate
-   loop is running, measures the first ~60 frames' average frame time
-   to decide whether this device can sustain it. If not, pixel ratio,
+   loop is actually rendering (i.e. from the first planet entered —
+   see the pause flags below), measures the first ~60 frames' average
+   frame time to decide whether this device can sustain it. If not, pixel ratio,
    the distant star count, and the target FPS step down at runtime
    (see applyLowQuality() near the animate loop below).
    OS-level prefers-reduced-motion is a stated accessibility
@@ -818,7 +819,24 @@ const clock = new THREE.Clock();
 let TARGET_FPS = lowQuality ? 30 : 60;
 let FRAME_INTERVAL = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
-let animPaused = false;
+
+/* ----- Why there are two pause flags and not one -----
+   Two entirely independent things can mean "don't draw": the tab is hidden,
+   and the planet view isn't the screen the user is looking at. They start and
+   stop on their own schedules — hide the tab while sitting in the picker and
+   both are true at once — so they get one boolean each. Collapsing them into a
+   single flag means whichever reason clears last un-pauses the scene while the
+   other still stands, which is exactly how a hidden tab ends up rendering a
+   planet nobody is looking at. `animPaused` is the *derived* value: the loop
+   and sceneStats() read it, updatePauseState() is the only thing that writes it.
+
+   The view flag starts true. Before Plan 3 the scene rendered from module load
+   — behind the opaque entry screen and behind the whole picker, which is a
+   solar system in DOM, not this 3D scene. Nothing between load and entering a
+   planet needs a frame, so nothing gets one. */
+let pausedForHiddenTab = false;
+let pausedForHiddenView = true;
+let animPaused = true;
 
 // Steps pixel ratio, star count, and target FPS down to their low-quality
 // values. Called either immediately (prefers-reduced-motion at load) or
@@ -842,6 +860,12 @@ function applyLowQuality() {
 // rendered frames. Skipped entirely if lowQuality was already forced on
 // by prefers-reduced-motion — that's a stated preference, not something
 // a fast benchmark result should override.
+// It lives below the pause check on purpose: a paused frame does no work and
+// must not be counted, or the scene would benchmark itself as blisteringly
+// fast while drawing nothing. Since Plan 3 Phase 2 that means the first 60
+// samples are taken inside a planet, on a ring full of cards, rather than on
+// the empty scene that used to render behind the entry screen — a fairer
+// measurement of the thing the verdict is actually about.
 const BENCHMARK_FRAME_COUNT = 60;
 const BENCHMARK_MS_THRESHOLD = 22; // ~45fps
 let benchmarkDone = lowQuality || forcedQuality !== null;
@@ -881,14 +905,63 @@ export function setOnFrame(fn) {
   onFrame = fn;
 }
 
-// Pause rendering when tab is hidden to save CPU/GPU
+// Recomputes animPaused from the two reasons above and handles the edges of
+// the transition. Only ever called after one of the reasons changes.
+function updatePauseState() {
+  const paused = pausedForHiddenTab || pausedForHiddenView;
+  if (paused === animPaused) return;
+  animPaused = paused;
+
+  if (paused) {
+    // WebGLRenderer.render() resets renderer.info at the *start* of a render,
+    // so simply not calling render() leaves the draw-call and triangle counters
+    // frozen at whatever the last drawn frame cost. The perf HUD would go on
+    // reporting a full scene's worth of draw calls for a scene that isn't being
+    // drawn at all — the opposite of what this phase is for. Resetting once on
+    // the way in makes "paused" read honestly as 0.
+    renderer.info.reset();
+    return;
+  }
+
+  lastFrameTime = 0; // reset so a long pause doesn't arrive as one huge delta
+
+  // Draw exactly one frame right now rather than waiting for the next rAF
+  // tick. Resuming happens at the *midpoint* of the hyperspace whiteout, and
+  // the ring needs to already be there when the whiteout clears; one frame's
+  // wait is a visible blank flash on a machine throttled to 30fps. No onFrame
+  // callback for this one — it's a catch-up draw, not a loop tick, and feeding
+  // the HUD a frame with no delta would only muddy its average.
+  renderer.render(scene, camera);
+}
+
+// Pause rendering when the tab is hidden to save CPU/GPU.
 document.addEventListener('visibilitychange', () => {
-  animPaused = document.hidden;
-  if (!animPaused) lastFrameTime = 0; // reset so no huge delta on resume
+  pausedForHiddenTab = document.hidden;
+  updatePauseState();
 });
+
+/* Stop / start drawing because of *which screen is up*, independent of tab
+   visibility. Called from planetPicker.js, which owns the hyperspace
+   transition and therefore knows the exact moment the screen is covered:
+   resume at the midpoint of entering a planet, pause at the midpoint of
+   going back to the picker. Travelling between moons stays inside the planet
+   view and deliberately touches neither. */
+export function pauseScene() {
+  pausedForHiddenView = true;
+  updatePauseState();
+}
+
+export function resumeScene() {
+  pausedForHiddenView = false;
+  updatePauseState();
+}
 
 function animate(now = 0) {
   requestAnimationFrame(animate);
+  // Bailing here rather than just before renderer.render() is the point: the
+  // bob/spin/twinkle work below mutates hundreds of objects and is the larger
+  // half of the cost. The rAF chain itself is kept alive so resuming is a flag
+  // flip rather than a restart.
   if (animPaused) return;
 
   // Throttle to TARGET_FPS
