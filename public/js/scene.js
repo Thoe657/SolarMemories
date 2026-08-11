@@ -109,14 +109,275 @@ const STAR_COUNT_LOW = 400;
 let stars = createStars(lowQuality ? STAR_COUNT_LOW : STAR_COUNT_HIGH);
 scene.add(stars);
 
-/* ----- Floating ambient lights ----- */
+/* ============================================================
+   FLOATING AMBIENT LIGHTS (the "fairy lights")
+
+   Two THREE.Points clouds — the bulbs and their haloes — sharing one small
+   ShaderMaterial. Twinkle and drift are computed on the GPU from a single
+   uTime uniform; every per-light value (colour, size, base opacity, twinkle
+   and drift speed/phase) rides along as a buffer attribute.
+
+   What this replaced, and what it actually bought (Plan 3 Phase 3): 240 sphere
+   meshes — 120 bulbs + 120 glows — each with its own MeshBasicMaterial, all
+   mutated from JS every frame. The draw-call saving is much smaller than the
+   plan's "~240 calls" claim: measured, a whole planet renders in 31 calls
+   total, because the lights are scattered through a shell *around* the camera
+   and three frustum-culls each mesh, so only ~25 of the 240 were ever
+   submitted. The costs that were real are the ones culling never touched — a
+   per-frame JS loop over 240 objects doing sin/cos and writing .position
+   (dirtying 240 matrices, all recomputed in updateMatrixWorld every frame),
+   240 material.opacity writes, and those ~25 draw calls. All of that is now
+   two uniform writes and 2 draw calls.
+
+   The mesh implementation is still below as createFloatingLights(): it is the
+   fallback for a driver that can't compile the shader (see probeFairyShader).
+============================================================ */
 const fairyGroup = new THREE.Group();
 scene.add(fairyGroup);
 
+// Tier counts. High is the 50+40+30 the scene has always had; low drops to the
+// Plan 3 tier table's 24 (the old low path built 45). Phase 4 adds medium (60).
+const FAIRY_COUNT_HIGH = 120;
+const FAIRY_COUNT_LOW = 24;
+
+// The three populations, as *shares* of the total so a tier scales them
+// together instead of one group vanishing first. At FAIRY_COUNT_HIGH they come
+// out at exactly the original 50 / 40 / 30 — that is the point, the high tier
+// has to be untouched. (24 → 10/8/6; Phase 4's 60 → 25/20/15.)
+const FAIRY_POPULATIONS = [
+  { share: 50 / 120, color: 0xffd9a0, radiusMin: 3, radiusMax: 7 },
+  { share: 40 / 120, color: 0xffe8c0, radiusMin: 6, radiusMax: 11 },
+  { share: 30 / 120, color: 0xffcf9a, radiusMin: 4, radiusMax: 9 }
+];
+
+const FAIRY_BULB_RADIUS = 0.045;
+const FAIRY_GLOW_RADIUS = 0.12;
+const FAIRY_GLOW_OPACITY = 0.18;
+
+function fairyCounts(total) {
+  return FAIRY_POPULATIONS.map((pop) => Math.round(total * pop.share));
+}
+
+/* Colour space — the part of this change that would be invisible in a diff if
+   it were wrong. MeshBasicMaterial({ color: 0xffd9a0 }) put the hex through
+   THREE.Color, which (with ColorManagement on, the r160 default) converts
+   sRGB → linear working space; the built-in shader then encoded linear → sRGB
+   again on the way out, because renderer.outputColorSpace is SRGBColorSpace.
+   Net, the framebuffer got the hex back. A ShaderMaterial has neither half of
+   that — no material colour going in, no output stage coming out — so packing
+   THREE.Color's linear components straight into an attribute would ship washed-
+   out, wrong-hued lights. This bakes the output encoding on the CPU instead,
+   using three's own conversion (Color.convertLinearToSRGB is the same curve the
+   colorspace shader chunk applies), because it's constant per light and has no
+   business being a per-fragment pow. The fragment shader then writes the result
+   out untouched. If the renderer is ever switched to a linear output, the
+   un-encoded linear value is what the old material produced, so skip the step. */
+function fairyOutputColor(hex) {
+  const c = new THREE.Color(hex); // sRGB hex → linear working space
+  if (renderer.outputColorSpace === THREE.SRGBColorSpace) c.convertLinearToSRGB();
+  return c;
+}
+
+/* Point size has to attenuate with distance the way the spheres did: these
+   lights sit 3–11 units out with the camera *inside* the shell, so a fixed
+   screen-space size would be an obvious regression the moment you looked
+   around. A world-space diameter D at view depth d covers
+
+       D * (1 / tan(fov/2)) * (H_device / 2) / d      device pixels
+
+   vertically, so the attribute carries D and the uniform carries
+   (H_device / 2) / tan(fov/2). (three's own sizeAttenuation uses scale = H/2
+   and drops the 1/tan(fov/2) — PointsMaterial.size isn't in world units — which
+   is why this doesn't just reuse that value.) It depends on the drawing buffer
+   height, i.e. on both the canvas size and the pixel ratio, so it is refreshed
+   on resize and whenever the quality path changes the pixel ratio. */
+const fairyUniforms = {
+  uTime: { value: 0 },
+  uMotionDamp: { value: 1 },
+  uScale: { value: 1 }
+};
+
+const _fairyBufferSize = new THREE.Vector2();
+function updateFairyScale() {
+  renderer.getDrawingBufferSize(_fairyBufferSize);
+  fairyUniforms.uScale.value = (_fairyBufferSize.y * 0.5) / Math.tan((camera.fov * Math.PI) / 360);
+}
+
+// Sentinel string, carried in both shaders' source so the shader-error hook can
+// recognise *our* program without reaching into renderer internals.
+const FAIRY_SHADER_SENTINEL = 'FAIRY_LIGHTS_V1';
+
+const FAIRY_VERTEX_SHADER = `
+  // ${FAIRY_SHADER_SENTINEL}
+  uniform float uTime;
+  uniform float uMotionDamp;
+  uniform float uScale;
+
+  attribute vec3 aColor;
+  attribute float aSize;     // world-space diameter
+  attribute float aOpacity;  // this cloud's base opacity for this light
+  attribute vec2 aTwinkle;   // x: speed, y: phase
+  attribute vec2 aDrift;     // x: speed, y: phase
+
+  varying vec3 vColor;
+  varying float vAlpha;
+  varying float vEdge;
+
+  void main() {
+    // Same drift as the old JS loop, axis for axis.
+    float d = aDrift.x;
+    float p = aDrift.y;
+    vec3 drifted = position + vec3(
+      sin(uTime * d + p),
+      cos(uTime * d * 0.8 + p),
+      sin(uTime * d * 0.6 + p)
+    ) * 0.4 * uMotionDamp;
+
+    // ...and the same twinkle, including its asymmetry with the drift: damping
+    // blends the flicker toward a steady 1 (no flicker) rather than toward off,
+    // while the drift above is simply scaled down.
+    float rawFlick = 0.6 + 0.4 * sin(uTime * aTwinkle.x + aTwinkle.y);
+    float flick = uMotionDamp < 1.0 ? 1.0 - (1.0 - rawFlick) * uMotionDamp : rawFlick;
+
+    vColor = aColor;
+    vAlpha = aOpacity * flick;
+
+    vec4 mvPosition = modelViewMatrix * vec4(drifted, 1.0);
+    // max() only guards against a divide by ~0; nothing gets within 1.1 units.
+    float size = aSize * uScale / max(-mvPosition.z, 0.05);
+    gl_PointSize = size;
+    vEdge = 1.0 / max(size, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const FAIRY_FRAGMENT_SHADER = `
+  // ${FAIRY_SHADER_SENTINEL}
+  varying vec3 vColor;
+  varying float vAlpha;
+  varying float vEdge;
+
+  void main() {
+    // The meshes these replace were spheres, so the silhouette is a disc, not
+    // the square a point sprite rasterizes by default. It has to be discard and
+    // not just alpha 0: this material writes depth (see renderOrder below), so
+    // a fully transparent corner would still punch a hole in whatever is behind
+    // the sprite.
+    vec2 offset = gl_PointCoord - vec2(0.5);
+    float r = length(offset);
+    if (r > 0.5) discard;
+    // vEdge is one device pixel expressed in gl_PointCoord units: fading the
+    // last pixel of the rim stands in for the MSAA that antialias: true used to
+    // give the sphere's geometric edge, so the dots don't come out jagged.
+    float alpha = vAlpha * (1.0 - smoothstep(0.5 - vEdge, 0.5, r));
+    gl_FragColor = vec4(vColor, alpha);
+  }
+`;
+
+let fairyMaterial = null;
+
+function getFairyMaterial() {
+  if (!fairyMaterial) {
+    fairyMaterial = new THREE.ShaderMaterial({
+      uniforms: fairyUniforms,
+      vertexShader: FAIRY_VERTEX_SHADER,
+      fragmentShader: FAIRY_FRAGMENT_SHADER,
+      // Matching the old MeshBasicMaterial({ transparent: true }) exactly:
+      // normal blending, depth test on, depth write on. Both clouds share the
+      // one material — the only thing that differed between a bulb and a glow
+      // was size and opacity, and both of those are attributes.
+      transparent: true
+    });
+  }
+  return fairyMaterial;
+}
+
+function buildFairyCloud(total) {
+  const counts = fairyCounts(total);
+  const n = counts.reduce((a, b) => a + b, 0);
+
+  // Per-light values, shared by both clouds so a glow always sits exactly on
+  // its bulb — the old code guaranteed that with glow.position.copy(bulb) every
+  // frame; here they simply evaluate the same drift from the same numbers.
+  const position = new Float32Array(n * 3);
+  const color = new Float32Array(n * 3);
+  const bulbOpacity = new Float32Array(n);
+  const glowOpacity = new Float32Array(n);
+  const twinkle = new Float32Array(n * 2);
+  const drift = new Float32Array(n * 2);
+
+  let i = 0;
+  FAIRY_POPULATIONS.forEach((pop, gi) => {
+    const c = fairyOutputColor(pop.color);
+    for (let k = 0; k < counts[gi]; k++, i++) {
+      // random position in a spherical shell around the viewer
+      const r = pop.radiusMin + Math.random() * (pop.radiusMax - pop.radiusMin);
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      position[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      position[i * 3 + 1] = r * Math.cos(phi);
+      position[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+      color[i * 3] = c.r; color[i * 3 + 1] = c.g; color[i * 3 + 2] = c.b;
+
+      bulbOpacity[i] = 0.6 + Math.random() * 0.35;
+      glowOpacity[i] = FAIRY_GLOW_OPACITY;
+      twinkle[i * 2]     = 0.4 + Math.random() * 1.4;
+      twinkle[i * 2 + 1] = Math.random() * Math.PI * 2;
+      drift[i * 2]       = 0.05 + Math.random() * 0.12;
+      drift[i * 2 + 1]   = Math.random() * Math.PI * 2;
+    }
+  });
+
+  const material = getFairyMaterial();
+
+  const makeCloud = (opacity, worldRadius, renderOrder) => {
+    const geo = new THREE.BufferGeometry();
+    const size = new Float32Array(n).fill(worldRadius * 2); // attribute is a diameter
+    geo.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(color, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+    geo.setAttribute('aOpacity', new THREE.BufferAttribute(opacity, 1));
+    geo.setAttribute('aTwinkle', new THREE.BufferAttribute(twinkle, 2));
+    geo.setAttribute('aDrift', new THREE.BufferAttribute(drift, 2));
+    // Set by hand rather than computed lazily: the shader displaces every point
+    // by up to 0.4 per axis, which a bounding sphere fitted to the *base*
+    // positions doesn't know about. (The camera is inside the shell, so this
+    // never actually culls — it just stops a future change from popping.)
+    geo.computeBoundingSphere();
+    geo.boundingSphere.radius += 0.7;
+
+    const points = new THREE.Points(geo, material);
+    points.renderOrder = renderOrder;
+    return points;
+  };
+
+  /* renderOrder, rather than trusting the default sort. three orders transparent
+     objects back-to-front by the *object's* origin, and both clouds sit at the
+     scene origin — 1.2 below the camera, not where any individual light is — so
+     their sort key is meaningless here and can land either side of the cards'
+     depending on which way you happen to be looking. Losing that coin toss puts
+     the whole cloud in front: a light nearer than a card writes depth first, the
+     card then fails the depth test across that disc, and you get a hole in the
+     card with the sky showing through it. Drawing the lights last is both
+     deterministic and what 240 individually-sorted meshes worked out to anyway.
+     Glows after bulbs, matching the old add order — equal depths pass three's
+     LessEqual depth func, so the halo lands over its bulb exactly as before. */
+  const bulbs = makeCloud(bulbOpacity, FAIRY_BULB_RADIUS, 1);
+  const glows = makeCloud(glowOpacity, FAIRY_GLOW_RADIUS, 2);
+  fairyGroup.add(bulbs);
+  fairyGroup.add(glows);
+
+  updateFairyScale();
+}
+
+// The pre-Phase-3 implementation, kept as the fallback for a driver that can't
+// compile the ShaderMaterial. Unchanged apart from taking its segment count
+// from the live quality path, as it always did.
 function createFloatingLights(count, color, radiusMin, radiusMax) {
   const segments = lowQuality ? 5 : 8;
-  const bulbGeo = new THREE.SphereGeometry(0.045, segments, segments);
-  const glowGeo = new THREE.SphereGeometry(0.12, segments, segments);
+  const bulbGeo = new THREE.SphereGeometry(FAIRY_BULB_RADIUS, segments, segments);
+  const glowGeo = new THREE.SphereGeometry(FAIRY_GLOW_RADIUS, segments, segments);
 
   for (let i = 0; i < count; i++) {
     // random position in a spherical shell around the viewer
@@ -141,7 +402,7 @@ function createFloatingLights(count, color, radiusMin, radiusMax) {
     fairyGroup.add(bulb);
 
     // tiny halo glow
-    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18 });
+    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: FAIRY_GLOW_OPACITY });
     const glow = new THREE.Mesh(glowGeo, glowMat);
     glow.position.copy(pos);
     bulb.userData.glow = glow;
@@ -149,10 +410,109 @@ function createFloatingLights(count, color, radiusMin, radiusMax) {
   }
 }
 
-// scattered warm lights, closer in and further out, drifting gently
-createFloatingLights(lowQuality ? 20 : 50, 0xffd9a0, 3, 7);
-createFloatingLights(lowQuality ? 15 : 40, 0xffe8c0, 6, 11);
-createFloatingLights(lowQuality ? 10 : 30, 0xffcf9a, 4, 9);
+function buildFairyMeshes(total) {
+  const counts = fairyCounts(total);
+  FAIRY_POPULATIONS.forEach((pop, gi) => {
+    createFloatingLights(counts[gi], pop.color, pop.radiusMin, pop.radiusMax);
+  });
+}
+
+function clearFairyLights() {
+  const materials = new Set();
+  fairyGroup.children.slice().forEach((obj) => {
+    fairyGroup.remove(obj);
+    obj.geometry.dispose();
+    materials.add(obj.material);
+  });
+  // The two clouds share one material and every mesh bulb/glow has its own, so
+  // dedupe before disposing — disposing the shared one twice would decrement
+  // three's program reference count past zero.
+  materials.forEach((mat) => {
+    if (mat !== fairyMaterial) mat.dispose(); // the cloud's material survives a rebuild
+  });
+}
+
+/* 'points' is the shader cloud; 'meshes' is the fallback. */
+let fairyMode = 'points';
+let fairyCount = lowQuality ? FAIRY_COUNT_LOW : FAIRY_COUNT_HIGH;
+
+/* Rebuild the fairy lights at a new count, disposing what was there. This is
+   the entry point Phase 4's applyQualityTier() wants — the same shape as the
+   star field's rebuild in applyLowQuality() below, and the reason Phase 3 comes
+   first: before this, the lights were built at module load and the quality
+   path could not touch them at all, so a device the benchmark correctly called
+   slow still paid for all 120. */
+export function setFairyLightCount(total) {
+  fairyCount = total;
+  clearFairyLights();
+  if (fairyMode === 'points') buildFairyCloud(total);
+  else buildFairyMeshes(total);
+}
+
+/* How a failed shader compile is detected — and why not a try/catch around the
+   constructor. three doesn't throw on a bad program: WebGLProgram logs the
+   driver's error and leaves the material drawing nothing, and the check is
+   lazy, deferred to the program's first use, so nothing to catch exists at
+   construction time. What three does offer is renderer.debug.onShaderError, its
+   public hook for exactly this. We install it permanently and identify our own
+   program by looking for FAIRY_SHADER_SENTINEL in the failing shader's source
+   (via gl.getShaderSource) rather than by matching against renderer internals,
+   so it keeps working across a three upgrade — and it fires on the first real
+   frame even if the probe below misses. The swap is deferred to a macrotask
+   because the hook runs *inside* the renderer, mid-program-setup, and disposing
+   the material it is currently binding is asking for trouble. */
+let fairyShaderFailed = false;
+
+function fallbackToMeshLights() {
+  if (fairyMode === 'meshes') return;
+  console.warn('Fairy-light shader failed to compile — falling back to meshes.');
+  clearFairyLights();
+  fairyMaterial?.dispose();
+  fairyMaterial = null;
+  fairyMode = 'meshes';
+  buildFairyMeshes(fairyCount);
+}
+
+renderer.debug.onShaderError = (gl, program, glVertexShader, glFragmentShader) => {
+  const src = (gl.getShaderSource(glVertexShader) || '') + (gl.getShaderSource(glFragmentShader) || '');
+  if (src.includes(FAIRY_SHADER_SENTINEL)) {
+    if (!fairyShaderFailed) {
+      fairyShaderFailed = true;
+      setTimeout(fallbackToMeshLights, 0);
+    }
+    return;
+  }
+  // Installing the hook suppresses three's own console.error for *every*
+  // program, so anything that isn't ours still has to be reported.
+  console.error('THREE.WebGLProgram: shader error\n', gl.getProgramInfoLog(program));
+};
+
+// Compile the cloud's program up front so a failure is caught before the first
+// planet rather than showing an empty sky for a frame. The compile runs against
+// a throwaway Scene holding just the two clouds — renderer.compile() walks
+// whatever scene it is given, and dragging the sky, stars, cards and portals
+// into a module-load compile is precisely the load-time cost Phase 2 removed.
+// r160 links the program during compile() but defers the link-status check to
+// the program's first getUniforms(), so nudge that too; both steps are
+// best-effort, with the onShaderError hook above as the real safety net.
+function probeFairyShader() {
+  if (fairyMode !== 'points') return;
+  const parked = fairyGroup.children.slice();
+  try {
+    const probe = new THREE.Scene();
+    parked.forEach((obj) => probe.add(obj));
+    renderer.compile(probe, camera);
+    renderer.properties.get(fairyMaterial)?.currentProgram?.getUniforms?.();
+  } catch (e) {
+    console.warn('Fairy-light shader probe failed', e);
+    fairyShaderFailed = true;
+  }
+  parked.forEach((obj) => fairyGroup.add(obj)); // back out of the probe scene
+  if (fairyShaderFailed) fallbackToMeshLights();
+}
+
+setFairyLightCount(fairyCount);
+probeFairyShader();
 
 /* ============================================================
    MEMORY CARD CREATION (polaroid sprites)
@@ -838,9 +1198,10 @@ let pausedForHiddenTab = false;
 let pausedForHiddenView = true;
 let animPaused = true;
 
-// Steps pixel ratio, star count, and target FPS down to their low-quality
-// values. Called either immediately (prefers-reduced-motion at load) or
-// once the frame-time benchmark below decides the device can't keep up.
+// Steps pixel ratio, star count, fairy-light count and target FPS down to
+// their low-quality values. Called either immediately (prefers-reduced-motion
+// at load) or once the frame-time benchmark below decides the device can't
+// keep up.
 function applyLowQuality() {
   if (lowQuality) return; // already applied
   lowQuality = true;
@@ -854,6 +1215,12 @@ function applyLowQuality() {
   scene.remove(oldStars);
   oldStars.geometry.dispose();
   oldStars.material.dispose();
+
+  // Phase 3 made this reachable at runtime; before it, the lights were built
+  // at module load and a slow device kept all 120 of them.
+  setFairyLightCount(FAIRY_COUNT_LOW);
+  // Point size is in device pixels, so the new pixel ratio changes it.
+  updateFairyScale();
 }
 
 // Runtime capability benchmark: average frame time over the first ~60
@@ -1017,27 +1384,36 @@ function animate(now = 0) {
     portal.group.scale.setScalar(swell);
   });
 
-  // twinkle + drift floating lights
-  fairyGroup.children.forEach((obj) => {
-    if (obj.userData.twinklePhase !== undefined) {
-      const rawFlick = 0.6 + 0.4 * Math.sin(t * obj.userData.twinkleSpeed + obj.userData.twinklePhase);
-      // dampened: blend toward a steady 1 (no flicker) instead of fully off
-      const flick = motionDamp < 1 ? 1 - (1 - rawFlick) * motionDamp : rawFlick;
-      obj.material.opacity = obj.userData.baseOpacity * flick;
+  // twinkle + drift floating lights. On the shader path this is the whole of
+  // it: two uniform writes, and the GPU evaluates the same drift and twinkle
+  // per point that the loop below used to evaluate per object on the CPU.
+  if (fairyMode === 'points') {
+    fairyUniforms.uTime.value = t;
+    fairyUniforms.uMotionDamp.value = motionDamp;
+  } else {
+    // Fallback path only (a driver that couldn't compile the shader): the
+    // original per-object loop, unchanged.
+    fairyGroup.children.forEach((obj) => {
+      if (obj.userData.twinklePhase !== undefined) {
+        const rawFlick = 0.6 + 0.4 * Math.sin(t * obj.userData.twinkleSpeed + obj.userData.twinklePhase);
+        // dampened: blend toward a steady 1 (no flicker) instead of fully off
+        const flick = motionDamp < 1 ? 1 - (1 - rawFlick) * motionDamp : rawFlick;
+        obj.material.opacity = obj.userData.baseOpacity * flick;
 
-      // gentle drifting motion around the base position
-      const d = obj.userData.driftSpeed;
-      const p = obj.userData.driftPhase;
-      obj.position.x = obj.userData.basePos.x + Math.sin(t * d + p) * 0.4 * motionDamp;
-      obj.position.y = obj.userData.basePos.y + Math.cos(t * d * 0.8 + p) * 0.4 * motionDamp;
-      obj.position.z = obj.userData.basePos.z + Math.sin(t * d * 0.6 + p) * 0.4 * motionDamp;
+        // gentle drifting motion around the base position
+        const d = obj.userData.driftSpeed;
+        const p = obj.userData.driftPhase;
+        obj.position.x = obj.userData.basePos.x + Math.sin(t * d + p) * 0.4 * motionDamp;
+        obj.position.y = obj.userData.basePos.y + Math.cos(t * d * 0.8 + p) * 0.4 * motionDamp;
+        obj.position.z = obj.userData.basePos.z + Math.sin(t * d * 0.6 + p) * 0.4 * motionDamp;
 
-      if (obj.userData.glow) {
-        obj.userData.glow.material.opacity = 0.18 * flick;
-        obj.userData.glow.position.copy(obj.position);
+        if (obj.userData.glow) {
+          obj.userData.glow.material.opacity = FAIRY_GLOW_OPACITY * flick;
+          obj.userData.glow.position.copy(obj.position);
+        }
       }
-    }
-  });
+    });
+  }
 
   // gentle star twinkle via scene rotation
   stars.rotation.y = t * 0.005 * motionDamp;
@@ -1055,4 +1431,7 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowQuality ? 1 : 2));
+  // The fairy lights' point size is in device pixels, derived from the drawing
+  // buffer height and the FOV — both of which just changed.
+  updateFairyScale();
 });
