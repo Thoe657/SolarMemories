@@ -2,7 +2,14 @@
    THREE.JS SETUP — renderer/camera/lights/background/animate loop
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
-import { makePolaroidTexture, makeMoonSurfaceTexture, makePortalLabelTexture, roundRect } from './cards.js';
+import {
+  makePolaroidTexture,
+  makeMoonSurfaceTexture,
+  makePortalLabelTexture,
+  makeCardCanvas,
+  cardTextureSize,
+  roundRect
+} from './cards.js';
 import { loadAllMemories, loadMemory, loadMoons } from './api.js';
 import { showStorageWarning } from './util.js';
 import {
@@ -600,32 +607,154 @@ function applyRingLayout() {
 }
 
 /* ============================================================
-   TEXTURE CACHE — in-memory Map<memoryId, CanvasTexture>, scoped to
+   SHARED CARD GEOMETRY (Plan 3 Phase 6) — every star in the ring, and
+   every loading placeholder, is the same rectangle: 1.8 units tall at the
+   card texture's aspect ratio. One PlaneGeometry serves all of them rather
+   than one per mesh, so renderer.info.memory.geometries stops scaling with
+   how many cards are on screen.
+
+   Two things follow from that and are easy to undo by accident:
+   - disposeCardMesh() and clearLoadingPlaceholders() must NOT dispose
+     mesh.geometry any more. It belongs to this module, not to the mesh, and
+     disposing it with the first card removed would take the whole ring's
+     geometry down with it.
+   - getMeshScreenRect() projects a card's corners from
+     mesh.geometry.parameters. PlaneGeometry keeps `parameters` on the
+     instance, so sharing one instance keeps that working — every card
+     reports the same width/height, which is right, because they are the
+     same size.
+
+   The aspect comes from the tier's card texture rather than a literal, so
+   the mesh's proportions cannot drift from the drawing's. All three tiers
+   are 512:600 today, which makes refitCardGeometry() a no-op in practice;
+   it exists so an edit to that table can't silently start stretching cards.
+============================================================ */
+const CARD_MESH_HEIGHT = 1.8;
+let cardAspect = 0;
+let cardGeometry = null;
+
+// "Which size are the card textures currently being drawn at" — the thing a
+// tier change has to be compared against, since that is the only tier setting
+// baked into a drawing rather than read at draw time.
+function cardTextureKey() {
+  const { width, height } = cardTextureSize();
+  return `${width}x${height}`;
+}
+
+function buildCardGeometry() {
+  const { width, height } = cardTextureSize();
+  cardAspect = width / height;
+  cardGeometry = new THREE.PlaneGeometry(CARD_MESH_HEIGHT * cardAspect, CARD_MESH_HEIGHT);
+}
+buildCardGeometry();
+
+function refitCardGeometry() {
+  const { width, height } = cardTextureSize();
+  if (width / height === cardAspect) return;
+  const previous = cardGeometry;
+  buildCardGeometry();
+  // Everything in the ring — stars and placeholders alike — is pointed at the
+  // one geometry, so they all move over together before the old one goes.
+  cardGroup.children.forEach((mesh) => { mesh.geometry = cardGeometry; });
+  previous.dispose();
+}
+
+/* ============================================================
+   TEXTURE CACHE — an LRU over Map<memoryId, CanvasTexture>, scoped to
    this page session. Re-entering a previously visited planet skips
    regenerating (canvas-drawing) unchanged memories' textures.
    NOTE (Phase 7): memory editing evicts the relevant entry via
    updateMemoryInScene() below, so a cache hit always reflects the
    memory's current saved content.
+
+   Why it is bounded (Plan 3 Phase 6): it used to grow for every planet
+   visited and never shrink, so a long session accumulated every card of
+   every planet ever opened — 512×600×4 bytes of texture memory apiece at
+   the high tier, ~1.2MB each before mipmaps. The cap is two full moons'
+   worth (MOON_STAR_CAP is 28), which comfortably covers the ring plus the
+   moon you just came from, so travelling back and forth between two
+   adjacent moons still hits the cache every time.
+
+   Eviction and the dispose contract. cacheTexture() marks a texture
+   userData.cached, and disposeCardMesh() refuses to dispose anything
+   carrying that flag — that is what stops a card leaving the ring from
+   destroying a texture the cache is still handing out. An LRU inverts the
+   risk: the *cache* now lets go of textures, and a texture it drops may
+   still be on a mesh you are looking at. releaseCachedTexture() is the one
+   place that resolves it, by handing ownership over rather than guessing:
+   the flag is cleared (so the mesh's own teardown will dispose it, exactly
+   as it does for an uncached texture), and the dispose happens here and now
+   only if no mesh is holding it. A texture on screen is therefore never
+   disposed out from under it, and one that isn't is never leaked.
 ============================================================ */
+const TEXTURE_CACHE_LIMIT = 64;   // ~two full moons (MOON_STAR_CAP is 28)
 const textureCache = new Map();
 
+// Both slots a card texture can be sitting in: the live map, and the front
+// face stashed by cardFlip.js while a card is flipped over (refreshMemoryTexture
+// below writes to that one mid-flip, so it is a real reference, not a stale one).
+function textureInUse(tex) {
+  return cardGroup.children.some((mesh) => (
+    mesh.material.map === tex || mesh.userData.frontMap === tex
+  ));
+}
+
+function releaseCachedTexture(tex) {
+  if (!tex) return;
+  tex.userData.cached = false;
+  if (!textureInUse(tex)) tex.dispose();
+}
+
 function getCachedTexture(id) {
-  return textureCache.get(id);
+  const tex = textureCache.get(id);
+  // Re-insert on a hit: Map iterates in insertion order, so "oldest entry
+  // first" is the same thing as "least recently used" only if a use moves the
+  // entry to the back.
+  if (tex) {
+    textureCache.delete(id);
+    textureCache.set(id, tex);
+  }
+  return tex;
 }
 
 function cacheTexture(id, tex) {
   tex.userData.cached = true;
+  textureCache.delete(id); // so a re-cache lands at the back, not in place
   textureCache.set(id, tex);
+  while (textureCache.size > TEXTURE_CACHE_LIMIT) {
+    const [oldestId, oldestTex] = textureCache.entries().next().value;
+    textureCache.delete(oldestId);
+    releaseCachedTexture(oldestTex);
+  }
 }
 
-// A card's map is only disposed if it isn't a shared, cached texture —
-// disposing a cached texture here would break it for the next cache hit.
+// The only way an entry leaves the cache deliberately (an edit, a delete, a
+// tier change). Going through here rather than textureCache.delete() is what
+// keeps the eviction contract in one place — and stops the two cases where a
+// bare delete orphaned a texture nothing would ever dispose: editing a memory
+// that isn't on the viewed moon, and deleting one.
+function dropCachedTexture(id) {
+  const tex = textureCache.get(id);
+  if (!tex) return;
+  textureCache.delete(id);
+  releaseCachedTexture(tex);
+}
+
+function clearTextureCache() {
+  textureCache.forEach(releaseCachedTexture);
+  textureCache.clear();
+}
+
+/* A card's map is only disposed if nothing that outlives the mesh owns it:
+   an LRU entry (userData.cached, above) or the single shared loading-placeholder
+   drawing (userData.shared, below). The geometry is shared by the whole ring and
+   is never disposed here — see the SHARED CARD GEOMETRY note above. */
 function disposeCardMesh(mesh) {
-  if (mesh.material.map && !mesh.material.map.userData?.cached) {
-    mesh.material.map.dispose();
+  const map = mesh.material.map;
+  if (map && !map.userData?.cached && !map.userData?.shared) {
+    map.dispose();
   }
-  mesh.material.dispose();
-  mesh.geometry.dispose();
+  if (!mesh.material.userData?.shared) mesh.material.dispose();
 }
 
 /* A photo memory's texture isn't "final" until its image has decoded
@@ -644,12 +773,10 @@ export function addMemoryToScene(memory) {
   const stillAwaitingPhoto = awaitingPhoto(memory);
   const tex = cached || makePolaroidTexture(memory);
   if (!cached && !stillAwaitingPhoto) cacheTexture(memory.id, tex);
-  const aspect = 512 / 600;
-  const height = 1.8;
-  const width = height * aspect;
-  const geo = new THREE.PlaneGeometry(width, height);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
-  const mesh = new THREE.Mesh(geo, mat);
+  // Shared geometry, per-card material: the material carries this card's own
+  // texture, the rectangle it is stretched over is the same for every card.
+  const mesh = new THREE.Mesh(cardGeometry, mat);
 
   mesh.userData.jitter = makeStarJitter();
   mesh.rotation.z = mesh.userData.jitter.tilt;
@@ -686,7 +813,7 @@ export function addMemoryToScene(memory) {
 // always marks a texture cached, so getCachedTexture() must not keep
 // returning the pre-edit drawing on a later re-render of this moon.
 export function updateMemoryInScene(memory) {
-  textureCache.delete(memory.id);
+  dropCachedTexture(memory.id);
   if (!memory.mesh) return; // edited memory isn't on the viewed moon right now -- nothing to redraw
   const newTex = makePolaroidTexture(memory);
   // The old map was this memory's sole reference in the (now-evicted) cache
@@ -713,27 +840,68 @@ export function updateMemoryInScene(memory) {
 const LOADING_PLACEHOLDER_COUNT = 4;
 let loadingPlaceholders = [];
 
+/* All four placeholders are the same blank card, so they are one texture and
+   one material between them, not four of each — the whole point of a
+   placeholder is that there is nothing to tell apart. Both are marked
+   userData.shared, which is what stops disposeCardMesh() (clearRenderedStars
+   runs it over every child of cardGroup, placeholders included) from
+   destroying a drawing the other three are still using. */
+let placeholderTexture = null;
+let placeholderTextureKey = '';
+let placeholderMaterial = null;
+
 function makePlaceholderTexture() {
-  const W = 512, H = 600;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
+  // Card-shaped, at the tier's card size and in the card's reference space,
+  // so its rounded corners land exactly where a real card's do.
+  const { canvas, ctx, W, H } = makeCardCanvas();
   ctx.fillStyle = 'rgba(210, 200, 190, 0.22)';
   roundRect(ctx, 0, 0, W, H, 14);
   ctx.fill();
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  // No mip chain for this one (Plan 3 Phase 6's filtering audit): it is a
+  // single flat translucent rectangle, so every level of the pyramid would be
+  // the same colour as the last, for a third more memory and a full mipmap
+  // generation on upload. minFilter has to come down with it — the default
+  // LinearMipmapLinearFilter on a texture with no mipmaps is an incomplete
+  // texture, which samples black.
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.userData.shared = true;
   return tex;
 }
 
+function getPlaceholderMaterial() {
+  const key = cardTextureKey();
+  // A tier change between two planet loads leaves the previous drawing at the
+  // wrong size. Redrawing it *here* is what makes disposing the old one safe:
+  // this runs only from showLoadingPlaceholders(), and the ring has always
+  // just been cleared by then, so no mesh is still showing it.
+  if (placeholderTexture && placeholderTextureKey !== key) {
+    placeholderTexture.dispose();
+    placeholderTexture = null;
+  }
+  if (!placeholderTexture) {
+    placeholderTexture = makePlaceholderTexture();
+    placeholderTextureKey = key;
+    if (placeholderMaterial) {
+      placeholderMaterial.map = placeholderTexture;
+      placeholderMaterial.needsUpdate = true;
+    }
+  }
+  if (!placeholderMaterial) {
+    placeholderMaterial = new THREE.MeshBasicMaterial({
+      map: placeholderTexture, transparent: true, side: THREE.DoubleSide
+    });
+    placeholderMaterial.userData.shared = true;
+  }
+  return placeholderMaterial;
+}
+
 export function showLoadingPlaceholders() {
-  const aspect = 512 / 600;
-  const height = 1.8;
-  const width = height * aspect;
+  const mat = getPlaceholderMaterial();
   for (let i = 0; i < LOADING_PLACEHOLDER_COUNT; i++) {
-    const geo = new THREE.PlaneGeometry(width, height);
-    const mat = new THREE.MeshBasicMaterial({ map: makePlaceholderTexture(), transparent: true, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(cardGeometry, mat);
 
     mesh.userData.jitter = makeStarJitter();
     mesh.userData.baseRotZ = 0;
@@ -747,12 +915,10 @@ export function showLoadingPlaceholders() {
 }
 
 export function clearLoadingPlaceholders() {
-  loadingPlaceholders.forEach((mesh) => {
-    mesh.material.map?.dispose();
-    mesh.material.dispose();
-    mesh.geometry.dispose();
-    cardGroup.remove(mesh);
-  });
+  // Nothing is disposed here any more: the geometry, the texture and the
+  // material are all shared and all outlive these four meshes (see above).
+  // The next planet load reuses them as they stand.
+  loadingPlaceholders.forEach((mesh) => cardGroup.remove(mesh));
   loadingPlaceholders = [];
 }
 
@@ -1200,7 +1366,9 @@ export function removeMemoryFromScene(memory) {
     memory.mesh = null;
     applyRingLayout(); // close the gap rather than leaving a hole in the ring
   }
-  textureCache.delete(memory.id);
+  // After the mesh has left cardGroup, so the LRU's "is anything still showing
+  // this?" check sees the truth and frees the texture instead of stranding it.
+  dropCachedTexture(memory.id);
 }
 
 /* ============================================================
@@ -1361,6 +1529,33 @@ let animPaused = true;
    comparable level after a tier change rather than creeping up by a star
    field and two point clouds every time one happens. */
 let appliedTier = currentTier();
+let appliedCardTextureKey = cardTextureKey();
+
+/* What a tier change does to card textures — the one tier setting that is
+   baked into a drawing instead of read every frame.
+
+   Cards already in the ring keep the texture they were drawn with. Redrawing
+   a whole moon's canvases is precisely the kind of hitch a downgrade is
+   trying to escape, and a downgrade fires when the machine is already
+   struggling; the ring is rebuilt from scratch at the next moon jump or
+   planet entry anyway, which is seconds away and is a moment that already
+   costs this.
+
+   What must not survive is the *cache*. Leaving 512×600 entries in it would
+   hand the low tier a full-size texture on the next re-entry and quietly undo
+   the saving it just chose. Clearing it means everything drawn from here on
+   is at the new size — and releaseCachedTexture() still refuses to dispose
+   anything a mesh is currently showing, so the cards on screen are unharmed
+   by the clear. The placeholder redraws itself lazily (see
+   getPlaceholderMaterial), and the geometry only moves if the *ratio*
+   changed, which no tier does today. */
+function applyCardTextureTier() {
+  const key = cardTextureKey();
+  if (key === appliedCardTextureKey) return;
+  appliedCardTextureKey = key;
+  clearTextureCache();
+  refitCardGeometry();
+}
 
 function applyQualityTier(tier) {
   if (tier === appliedTier) return; // nothing this module owns has changed
@@ -1384,10 +1579,12 @@ function applyQualityTier(tier) {
   // Point size is in device pixels, so the new pixel ratio changes it.
   updateFairyScale();
 
-  // The tier table also carries a card-texture size and hyperspace star
-  // counts. Nothing reads them here on purpose: a card's texture is baked
-  // when the card is built (Phase 6's job, in cards.js) and the hyperspace
-  // canvas belongs to planetPicker.js (Phase 8's).
+  // Card textures are tier-sized too, as of Phase 6, and they are the one
+  // tier setting that is *baked* rather than read per frame — so this is
+  // where the stale ones are dealt with. (The hyperspace star counts in the
+  // table are still nobody's yet; that canvas belongs to planetPicker.js and
+  // to Phase 8.)
+  applyCardTextureTier();
 
   // Rebuilding two point clouds and a star field costs a frame or two, and
   // the new tier deserves to be judged on its own frames rather than on the

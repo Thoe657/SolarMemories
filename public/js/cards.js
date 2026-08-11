@@ -2,12 +2,48 @@
    MEMORY CARD TEXTURE — polaroid canvas drawing helpers
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
+import { tierSettings } from './quality.js';
+
+/* ----- The card's drawing space (Plan 3 Phase 6) -----
+   Every coordinate, font size, line width and corner radius in this file is
+   written in a fixed 512×600 reference space. The quality tier decides only
+   how many device pixels that space is rasterised into: makeCardCanvas()
+   creates the canvas at the tier's size and scales the context once, so the
+   low tier's 384×450 is the *same drawing*, smaller — not a cropped or
+   re-laid-out one. The high tier's cardTexture is exactly this reference
+   size, so its transform is the identity and its cards come out
+   pixel-identical, which is decision 2 of the plan.
+
+   Two constraints on the tier table this rests on:
+   - Every tier's cardTexture must keep this 512:600 ratio. A different one
+     makes the scale non-uniform, which would turn the milestone card's
+     circular photo medallion into an ellipse.
+   - Front and back share this because they share one mesh: a mismatch in
+     either size or ratio would show as the card changing shape mid-flip.
+============================================================ */
+const CARD_W = 512, CARD_H = 600;
+
+// The tier's pixel size for a card texture — also what scene.js derives the
+// card mesh's aspect ratio from, so the mesh's proportions can't drift from
+// the drawing's.
+export function cardTextureSize() {
+  return tierSettings().cardTexture;
+}
+
+// A canvas at the tier's size with its context pre-scaled into the reference
+// space above. Exported because scene.js's loading placeholder is a card-shaped
+// drawing too, and its rounded corners have to line up with a real card's.
+export function makeCardCanvas() {
+  const { width, height } = cardTextureSize();
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(width / CARD_W, height / CARD_H);
+  return { canvas, ctx, W: CARD_W, H: CARD_H };
+}
 
 export function makePolaroidTexture(memory) {
-  const W = 512, H = 600;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
+  const { canvas, ctx, W, H } = makeCardCanvas();
 
   // Milestone memories get an alpha-masked star silhouette instead of the
   // rounded-rect polaroid (see drawMilestoneStarCard below); everything else
@@ -20,6 +56,11 @@ export function makePolaroidTexture(memory) {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  // Mipmaps (CanvasTexture's default) and anisotropy both stay: a card is
+  // 1.8 units tall on an 8.2-unit ring, which works out to about a fifth of
+  // the viewport height — roughly a 3× minification at pixel ratio 1 — and it
+  // tilts and bobs the whole time. This is a texture that is genuinely
+  // sampled below 1:1, so it is the wrong place to save the mip chain.
   tex.anisotropy = 4;
   return tex;
 }
@@ -306,6 +347,10 @@ export function makeMoonSurfaceTexture({ color = '#ffd9a0', locked = false }) {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  // Kept, unlike the caption plate below: 1024×512 wrapped onto a sphere about
+  // 170 device pixels across is a heavy minification, and the surface runs
+  // away from the view at the limb, which is precisely the grazing angle
+  // anisotropic filtering exists for.
   tex.anisotropy = 4;
   return tex;
 }
@@ -334,7 +379,24 @@ export function makePortalLabelTexture({ caption, label, locked }) {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  /* No anisotropy on this one (Plan 3 Phase 6's filtering audit). Anisotropic
+     filtering does something only where the view is skewed across a surface,
+     so the sample footprint comes out long and thin; this plate is a flat quad
+     whose group is turned to face the viewer, and the 20.5° elevation it hangs
+     at leaves that footprint within about 7% of square. The setting was never
+     reaching for a second sample here — dropping it cannot change how the
+     plate looks, which is the point: it was a line implying a cost/benefit
+     that doesn't exist at this angle.
+
+     Mipmaps do stay, contrary to the plan's premise that this plate is drawn
+     at roughly 1:1. Working it out from scene.js's own constants: the plate is
+     2.97 units tall (PORTAL_BODY_RADIUS * 2.2 / 2) at 27.8 units out, and a
+     55° FOV spans 28.9 units at that depth — so about a tenth of the viewport
+     height, i.e. a 256px-tall texture landing on roughly 90 device pixels at
+     pixel ratio 1. That is a ~2.8× minification of small text on a plate that
+     swings past as you look around, exactly what a mip chain is for, and
+     dropping it would trade a third of one texture's memory for shimmering
+     captions. */
   return tex;
 }
 
@@ -352,10 +414,9 @@ function drawPortalLock(ctx, cx, cy) {
 
 // The reverse side of a card, shown mid-flip: just title + date, no photo.
 export function makeCardBackTexture(memory) {
-  const W = 512, H = 600;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
+  // Same tier-sized canvas and same reference space as the front — they are
+  // two faces of one mesh (see the note at the top of this file).
+  const { canvas, ctx, W, H } = makeCardCanvas();
 
   ctx.fillStyle = '#fffaf0';
   roundRect(ctx, 0, 0, W, H, 14);
