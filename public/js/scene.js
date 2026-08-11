@@ -15,6 +15,15 @@ import {
   setCurrentMoonIndex
 } from './state.js';
 import { prefersReducedMotion } from './motionPreference.js';
+import {
+  currentTier,
+  tierSettings,
+  tierLabel,
+  nextTierDown,
+  autoTierAllowed,
+  recordMeasuredTier,
+  onTierChange
+} from './quality.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -23,35 +32,31 @@ const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerH
 camera.position.set(0, 1.2, 9);
 
 /* ============================================================
-   ADAPTIVE QUALITY — starts at full quality and, once the animate
-   loop is actually rendering (i.e. from the first planet entered —
-   see the pause flags below), measures the first ~60 frames' average
-   frame time to decide whether this device can sustain it. If not, pixel ratio,
-   the distant star count, and the target FPS step down at runtime
-   (see applyLowQuality() near the animate loop below).
-   OS-level prefers-reduced-motion is a stated accessibility
-   preference, not a capability signal — it short-circuits straight
-   to the low-quality path immediately, skipping the benchmark.
+   ADAPTIVE QUALITY (Plan 3 Phase 4) — the tier itself lives in
+   quality.js, which this module imports and which therefore finishes
+   resolving before a single line down here runs. That ordering is the
+   entire reason it is a separate module: `antialias` is baked into the
+   WebGL context by the constructor two lines below and cannot be
+   changed for the life of the page, so the low tier's
+   `antialias: false` is only reachable if the tier is already known —
+   from prefers-reduced-motion, ?quality=, a choice made on the entry
+   screen, or a verdict this machine reached in an earlier session and
+   quality.js read back out of localStorage.
 
-   ?quality=high|medium|low overrides all of that at load, so the low
-   path can actually be exercised on a machine fast enough never to
-   trip the benchmark. It has to be read *here*, before the renderer
-   is constructed, because pixel ratio is set from `lowQuality` at
-   construction time and can't be un-decided afterwards. A forced tier
-   also skips the benchmark, so a deliberately chosen "high" is never
-   quietly downgraded mid-session.
-   Plan 3 Phase 4 replaces this with a real 3-tier table in quality.js;
-   until that middle tier exists, `medium` is an alias for `high`.
+   Everything else the tier controls (pixel ratio, target FPS, distant
+   star count, fairy-light count) can be changed on a live renderer,
+   which is what applyQualityTier() near the animate loop does — either
+   because the entry screen's selector moved the tier, or because the
+   rolling frame-time average down there decided this machine can't hold
+   the tier it started on. That replaced a one-shot 60-frame benchmark
+   whose verdict was binary, forgotten at the end of the session, and
+   unable to touch the fairy lights at all.
 ============================================================ */
-const QUALITY_OVERRIDES = ['low', 'medium', 'high'];
-const rawQualityParam = new URLSearchParams(location.search).get('quality');
-const forcedQuality = QUALITY_OVERRIDES.includes(rawQualityParam) ? rawQualityParam : null;
+let quality = tierSettings();
 
-let lowQuality = prefersReducedMotion() || forcedQuality === 'low';
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ antialias: quality.antialias, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowQuality ? 1 : 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatioCap));
 container.appendChild(renderer.domElement);
 
 // Soft ambient + warm point lights to sell the "fairy light" mood
@@ -83,8 +88,8 @@ const bgMesh = new THREE.Mesh(bgGeo, bgMat);
 scene.add(bgMesh);
 
 /* ----- Distant twinkling stars (full sphere, including poles) -----
-   Rebuildable at a lower count by applyLowQuality() below, since unlike
-   the baked background this is cheap to tear down and recreate. ----- */
+   Rebuildable at another tier's count by applyQualityTier() below, since
+   unlike the baked background this is cheap to tear down and recreate. ----- */
 function createStars(count) {
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(count * 3);
@@ -104,9 +109,8 @@ function createStars(count) {
   return new THREE.Points(geo, mat);
 }
 
-const STAR_COUNT_HIGH = 900;
-const STAR_COUNT_LOW = 400;
-let stars = createStars(lowQuality ? STAR_COUNT_LOW : STAR_COUNT_HIGH);
+// 900 / 600 / 400 by tier — see quality.js's TIER_SETTINGS.
+let stars = createStars(quality.distantStars);
 scene.add(stars);
 
 /* ============================================================
@@ -135,15 +139,14 @@ scene.add(stars);
 const fairyGroup = new THREE.Group();
 scene.add(fairyGroup);
 
-// Tier counts. High is the 50+40+30 the scene has always had; low drops to the
-// Plan 3 tier table's 24 (the old low path built 45). Phase 4 adds medium (60).
-const FAIRY_COUNT_HIGH = 120;
-const FAIRY_COUNT_LOW = 24;
+// Counts come from quality.js's TIER_SETTINGS: 120 / 60 / 24. High is the
+// 50+40+30 the scene has always had; low drops to 24 (the pre-Plan-3 low path
+// built 45, and could only reach that at module load).
 
 // The three populations, as *shares* of the total so a tier scales them
-// together instead of one group vanishing first. At FAIRY_COUNT_HIGH they come
-// out at exactly the original 50 / 40 / 30 — that is the point, the high tier
-// has to be untouched. (24 → 10/8/6; Phase 4's 60 → 25/20/15.)
+// together instead of one group vanishing first. At the high tier's 120 they
+// come out at exactly the original 50 / 40 / 30 — that is the point, the high
+// tier has to be untouched. (medium's 60 → 25/20/15; low's 24 → 10/8/6.)
 const FAIRY_POPULATIONS = [
   { share: 50 / 120, color: 0xffd9a0, radiusMin: 3, radiusMax: 7 },
   { share: 40 / 120, color: 0xffe8c0, radiusMin: 6, radiusMax: 11 },
@@ -375,7 +378,7 @@ function buildFairyCloud(total) {
 // compile the ShaderMaterial. Unchanged apart from taking its segment count
 // from the live quality path, as it always did.
 function createFloatingLights(count, color, radiusMin, radiusMax) {
-  const segments = lowQuality ? 5 : 8;
+  const segments = currentTier() === 'low' ? 5 : 8;
   const bulbGeo = new THREE.SphereGeometry(FAIRY_BULB_RADIUS, segments, segments);
   const glowGeo = new THREE.SphereGeometry(FAIRY_GLOW_RADIUS, segments, segments);
 
@@ -434,13 +437,13 @@ function clearFairyLights() {
 
 /* 'points' is the shader cloud; 'meshes' is the fallback. */
 let fairyMode = 'points';
-let fairyCount = lowQuality ? FAIRY_COUNT_LOW : FAIRY_COUNT_HIGH;
+let fairyCount = quality.fairyLights;
 
 /* Rebuild the fairy lights at a new count, disposing what was there. This is
-   the entry point Phase 4's applyQualityTier() wants — the same shape as the
-   star field's rebuild in applyLowQuality() below, and the reason Phase 3 comes
-   first: before this, the lights were built at module load and the quality
-   path could not touch them at all, so a device the benchmark correctly called
+   the entry point applyQualityTier() below uses — the same shape as the star
+   field's rebuild beside it, and the reason Phase 3 came before Phase 4:
+   before this, the lights were built at module load and the quality path
+   could not touch them at all, so a device the benchmark correctly called
    slow still paid for all 120. */
 export function setFairyLightCount(total) {
   fairyCount = total;
@@ -1176,7 +1179,7 @@ export function getMeshScreenRect(mesh) {
    ANIMATION LOOP
 ============================================================ */
 const clock = new THREE.Clock();
-let TARGET_FPS = lowQuality ? 30 : 60;
+let TARGET_FPS = quality.targetFps;
 let FRAME_INTERVAL = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
 
@@ -1198,19 +1201,29 @@ let pausedForHiddenTab = false;
 let pausedForHiddenView = true;
 let animPaused = true;
 
-// Steps pixel ratio, star count, fairy-light count and target FPS down to
-// their low-quality values. Called either immediately (prefers-reduced-motion
-// at load) or once the frame-time benchmark below decides the device can't
-// keep up.
-function applyLowQuality() {
-  if (lowQuality) return; // already applied
-  lowQuality = true;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-  TARGET_FPS = 30;
+/* Moves the live renderer onto a tier. Everything touched here can change
+   on a running context; `antialias` is the one setting that cannot (see the
+   note at the top of this file), so a tier change that crosses that line
+   only completes on the next load — which is why the entry screen's
+   selector persists the choice as well as applying it, and says so.
+
+   Both rebuilds dispose what they replace, which is this phase's acceptance
+   check: renderer.info.memory.textures/.geometries has to come back to a
+   comparable level after a tier change rather than creeping up by a star
+   field and two point clouds every time one happens. */
+let appliedTier = currentTier();
+
+function applyQualityTier(tier) {
+  if (tier === appliedTier) return; // nothing this module owns has changed
+  appliedTier = tier;
+  quality = tierSettings(tier);
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatioCap));
+  TARGET_FPS = quality.targetFps;
   FRAME_INTERVAL = 1000 / TARGET_FPS;
 
   const oldStars = stars;
-  stars = createStars(STAR_COUNT_LOW);
+  stars = createStars(quality.distantStars);
   scene.add(stars);
   scene.remove(oldStars);
   oldStars.geometry.dispose();
@@ -1218,39 +1231,104 @@ function applyLowQuality() {
 
   // Phase 3 made this reachable at runtime; before it, the lights were built
   // at module load and a slow device kept all 120 of them.
-  setFairyLightCount(FAIRY_COUNT_LOW);
+  setFairyLightCount(quality.fairyLights);
   // Point size is in device pixels, so the new pixel ratio changes it.
   updateFairyScale();
+
+  // The tier table also carries a card-texture size and hyperspace star
+  // counts. Nothing reads them here on purpose: a card's texture is baked
+  // when the card is built (Phase 6's job, in cards.js) and the hyperspace
+  // canvas belongs to planetPicker.js (Phase 8's).
+
+  // Rebuilding two point clouds and a star field costs a frame or two, and
+  // the new tier deserves to be judged on its own frames rather than on the
+  // hitch of arriving.
+  resetTierSampling();
 }
 
-// Runtime capability benchmark: average frame time over the first ~60
-// rendered frames. Skipped entirely if lowQuality was already forced on
-// by prefers-reduced-motion — that's a stated preference, not something
-// a fast benchmark result should override.
-// It lives below the pause check on purpose: a paused frame does no work and
-// must not be counted, or the scene would benchmark itself as blisteringly
-// fast while drawing nothing. Since Plan 3 Phase 2 that means the first 60
-// samples are taken inside a planet, on a ring full of cards, rather than on
-// the empty scene that used to render behind the entry screen — a fairer
-// measurement of the thing the verdict is actually about.
-const BENCHMARK_FRAME_COUNT = 60;
-const BENCHMARK_MS_THRESHOLD = 22; // ~45fps
-let benchmarkDone = lowQuality || forcedQuality !== null;
-let benchmarkFrames = 0;
-let benchmarkTotal = 0;
+// The entry screen's selector and the rolling measurement below both reach
+// the renderer through here. A subscription rather than a direct call so
+// quality.js never has to import this module — it must stay ahead of the
+// renderer's construction, and a cycle would put it behind.
+onTierChange(applyQualityTier);
 
-// Which quality path is live, for the perf HUD's readout. Deliberately
-// trivial — the boolean is all there is to name until Phase 4 turns it into
-// a real tier. "(forced)" marks a ?quality= override specifically, so a
-// reading can be told apart from one the benchmark arrived at on its own.
-function currentTierName() {
-  const tier = lowQuality ? 'low' : 'high';
-  return forcedQuality ? `${tier} (forced)` : tier;
+/* ----- Rolling downgrade, replacing the one-shot 60-frame benchmark -----
+   A time-constant exponential moving average of frame time; if it stays bad
+   for TIER_SUSTAIN_MS the tier steps down exactly one place, and the verdict
+   is persisted so this machine never pays the learning cost again. It never
+   steps back *up*: quality that oscillates reads far worse than quality that
+   is one tier low, and a machine that recovers for two seconds has told you
+   nothing about the next thirty.
+
+   Why it can't fire during load. Sampling only happens below the pause check
+   — a paused frame does no work and would benchmark the scene as
+   blisteringly fast while drawing nothing — and since Phase 2 the loop only
+   runs frames inside a planet at all. So "after load" now means "after the
+   first planet is entered", and the expensive part of entering a planet
+   (texture generation, image decodes, the hyperspace canvas still running)
+   lands in exactly the first second of that. Hence TIER_WARMUP_MS of
+   *rendered* time is discarded after every resume, not just the first: every
+   planet entry has the same hitch, and none of them is evidence.
+
+   Why the threshold is 1.8× the target interval (30ms against a 60fps
+   target) and not the old benchmark's 22ms: the loop throttles with
+   `now - lastFrameTime < FRAME_INTERVAL`, and on a display running at
+   exactly the target rate the timestamp lands either side of that boundary
+   by fractions of a millisecond, so a perfectly healthy machine skips the
+   odd frame and averages ~25ms. A 22ms line would read that as failure and
+   downgrade a machine that was keeping up. 30ms is below any real 60fps
+   average and above that artifact. */
+const TIER_WARMUP_MS = 4000;    // rendered time ignored after every resume
+const TIER_SUSTAIN_MS = 2000;   // how long "bad" must hold before stepping down
+const TIER_EMA_TAU_MS = 500;    // the average's time constant
+const TIER_BAD_FACTOR = 1.8;    // multiple of the target frame interval that counts as bad
+
+let tierWarmupLeft = TIER_WARMUP_MS;
+let tierFrameAvg = 0;
+let tierBadMs = 0;
+
+function resetTierSampling() {
+  tierWarmupLeft = TIER_WARMUP_MS;
+  tierFrameAvg = 0;
+  tierBadMs = 0;
+}
+
+function sampleFrameTime(frameDelta) {
+  // A tier the user named by hand (the selector, or ?quality=) is never
+  // quietly moved, and prefers-reduced-motion is already at the bottom.
+  if (!autoTierAllowed()) return;
+  const next = nextTierDown();
+  if (!next) return;
+
+  if (tierWarmupLeft > 0) {
+    tierWarmupLeft -= frameDelta;
+    return;
+  }
+
+  // Weighting by the frame's own duration rather than by frame count keeps
+  // the average's memory measured in milliseconds, so it means the same
+  // thing at 60fps and at 12.
+  const alpha = Math.min(frameDelta / TIER_EMA_TAU_MS, 1);
+  tierFrameAvg = tierFrameAvg ? tierFrameAvg + (frameDelta - tierFrameAvg) * alpha : frameDelta;
+
+  if (tierFrameAvg > FRAME_INTERVAL * TIER_BAD_FACTOR) {
+    tierBadMs += frameDelta;
+    if (tierBadMs >= TIER_SUSTAIN_MS) {
+      // → quality.js persists it and notifies → applyQualityTier above.
+      recordMeasuredTier(next);
+      resetTierSampling(); // belt and braces if the tier didn't actually move
+    }
+  } else {
+    tierBadMs = 0;
+  }
 }
 
 // Live renderer/scene counters for the perf HUD (perfHud.js, ?perf=1 only).
 // An accessor rather than exporting the renderer itself, so the HUD can read
 // what it needs without anything else gaining a handle on the WebGL context.
+// `tier` is quality.js's label: the real tier name, suffixed with how it was
+// arrived at unless that was simply the default — "(forced)" still means a
+// ?quality= override specifically, as it did before Phase 4.
 export function sceneStats() {
   return {
     calls: renderer.info.render.calls,
@@ -1258,7 +1336,7 @@ export function sceneStats() {
     textures: renderer.info.memory.textures,
     geometries: renderer.info.memory.geometries,
     renderedStars: renderedStarCount(),
-    tier: currentTierName(),
+    tier: tierLabel(),
     paused: animPaused
   };
 }
@@ -1291,6 +1369,13 @@ function updatePauseState() {
   }
 
   lastFrameTime = 0; // reset so a long pause doesn't arrive as one huge delta
+
+  // Entering a planet is the most expensive moment the scene has — textures
+  // generated, photos decoded, a hyperspace canvas still animating over the
+  // top — and this is the exact instant it starts. Throw away the next few
+  // seconds of frames rather than letting the cost of arriving be mistaken
+  // for the cost of being here.
+  resetTierSampling();
 
   // Draw exactly one frame right now rather than waiting for the next rAF
   // tick. Resuming happens at the *midpoint* of the hyperspace whiteout, and
@@ -1338,15 +1423,7 @@ function animate(now = 0) {
 
   // Ignore a stray huge gap (e.g. right after a visibilitychange resume)
   // so it doesn't skew the average toward a false downgrade.
-  if (!benchmarkDone && frameDelta > 0 && frameDelta < 200) {
-    benchmarkFrames++;
-    benchmarkTotal += frameDelta;
-    if (benchmarkFrames >= BENCHMARK_FRAME_COUNT) {
-      benchmarkDone = true;
-      const avgFrameTime = benchmarkTotal / benchmarkFrames;
-      if (avgFrameTime > BENCHMARK_MS_THRESHOLD) applyLowQuality();
-    }
-  }
+  if (frameDelta > 0 && frameDelta < 200) sampleFrameTime(frameDelta);
 
   const t = clock.getElapsedTime();
 
@@ -1430,7 +1507,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowQuality ? 1 : 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatioCap));
   // The fairy lights' point size is in device pixels, derived from the drawing
   // buffer height and the FOV — both of which just changed.
   updateFairyScale();

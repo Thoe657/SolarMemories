@@ -7,6 +7,15 @@
    interaction gate layered on top of the planet picker, which
    keeps initializing underneath exactly as it always has.
 ============================================================ */
+import {
+  TIER_SETTINGS,
+  currentTier,
+  loadTimeTier,
+  setTier,
+  tierSource,
+  userChoice
+} from './quality.js';
+
 const entryScreen = document.getElementById('entryScreen');
 const canvas = document.getElementById('entryScreenCanvas');
 const ctx = canvas.getContext('2d');
@@ -99,3 +108,64 @@ function enter() {
 }
 
 enterBtn.addEventListener('click', enter);
+
+/* ============================================================
+   QUALITY TIER SELECTOR (Plan 3 Phase 4)
+
+   Lives here because the entry screen is the app's "before you go in"
+   surface — the one place a setting can be changed before any of it is
+   on screen, and where PLAN_NEXT.md's theme toggle is slated to land too.
+
+   The choice goes to quality.js, which persists it and notifies scene.js;
+   everything the tier controls except one thing is applied on the spot.
+   That one thing is antialias, which is fixed when the WebGLRenderer is
+   constructed at module load and can't be re-decided — so when a choice
+   crosses that line the note below says so rather than quietly lying
+   about what the user just got.
+============================================================ */
+const qualityOptions = document.getElementById('entryQualityOptions');
+const qualityNote = document.getElementById('entryQualityNote');
+
+// Why the effective tier isn't simply the chosen one. prefers-reduced-motion
+// and ?quality= both outrank the selector (see quality.js's precedence
+// chain), and silently ignoring a click is worse than explaining it.
+function noteText() {
+  const tier = currentTier();
+  const source = tierSource();
+
+  if (source === 'reduced-motion') return 'held at low — your system asks for reduced motion';
+  if (source === 'forced') return `held at ${tier} by ?quality= in the address bar`;
+  if (source === 'chosen') {
+    return TIER_SETTINGS[tier].antialias === TIER_SETTINGS[loadTimeTier()].antialias
+      ? ''  // the chip already says which tier; nothing to add
+      : 'edge smoothing changes next time you open this';
+  }
+  if (source === 'remembered' || source === 'measured') return `auto — ${tier} on this computer`;
+  return 'auto — high unless this computer struggles';
+}
+
+function renderQualitySelector() {
+  const choice = userChoice();
+  qualityOptions.querySelectorAll('.quality-chip').forEach((chip) => {
+    chip.setAttribute('aria-checked', String(chip.dataset.quality === choice));
+  });
+  qualityNote.textContent = noteText();
+}
+
+// Guarded because this module's body runs during startup: a stale cached
+// index.html without the selector markup would otherwise throw here and take
+// the entry screen — and with it the whole app's start — down with it. The
+// tier still resolves and applies without any of this; the selector is the
+// only part that goes missing.
+if (qualityOptions && qualityNote) {
+  qualityOptions.addEventListener('click', (e) => {
+    const chip = e.target.closest('.quality-chip');
+    if (!chip) return;
+    // 'auto' is a real value here, not a tier: it clears the override and hands
+    // the decision back to the remembered verdict and the rolling measurement.
+    setTier(chip.dataset.quality);
+    renderQualitySelector();
+  });
+
+  renderQualitySelector();
+}

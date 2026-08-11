@@ -16,6 +16,19 @@
     <div class="entry-actions">
       <button class="btn btn-primary" id="entryEnterBtn">enter</button>
     </div>
+    <!-- Quality tier selector (Plan 3 Phase 4). The entry screen is the
+         "before you go in" surface, and a tier chosen here is persisted so
+         the next load can act on it before the renderer exists. -->
+    <div class="entry-quality" id="entryQuality">
+      <div class="entry-quality-label">picture quality</div>
+      <div class="entry-quality-options" id="entryQualityOptions" role="radiogroup" aria-label="picture quality">
+        <button type="button" class="quality-chip" role="radio" aria-checked="true" data-quality="auto">auto</button>
+        <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="high">high</button>
+        <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="medium">medium</button>
+        <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="low">low</button>
+      </div>
+      <div class="entry-quality-note" id="entryQualityNote"></div>
+    </div>
   </div>
 </div>
 
