@@ -1048,6 +1048,38 @@
   .toast-undo-btn:hover { filter: brightness(1.08); }
   .toast-undo-btn:disabled { opacity: 0.6; cursor: default; }
 
+  /* ---------- Perf HUD (Plan 3 Phase 1, ?perf=1 only) ----------
+     Bottom-left is the one free corner: the topbar owns both top
+     corners and the toast plus the empty hint sit bottom-centre.
+     No backdrop-filter here on purpose — Phase 8 is removing it from
+     the always-on chrome over the WebGL canvas precisely because it
+     costs a filter pass per frame, and a perf readout that distorts
+     the frame time it reports would be self-defeating.
+     z-index sits above the canvas, the topbar, .overlay dialogs (100)
+     and the planet picker (1000) — Phase 2's whole question is "is the
+     scene still drawing while the picker is up", so a HUD the picker
+     covers would answer it in the one place it matters least. It stays
+     under the hyperspace canvas (2000) and the entry screen (3000).
+     Sitting over a dialog costs nothing: it's a small corner box with
+     pointer-events:none, so it can't swallow a click, and it only
+     exists under ?perf=1 at all. */
+  .perf-hud {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    z-index: 1050;
+    pointer-events: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    white-space: pre;
+    color: #b6f2c8;
+    background: rgba(8, 4, 14, 0.78);
+    border: 1px solid rgba(182, 242, 200, 0.22);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+
   /* ---------- Milestone toggle (add-memory form) ---------- */
   .milestone-toggle {
     display: flex;

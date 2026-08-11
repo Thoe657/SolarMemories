@@ -31,8 +31,22 @@ camera.position.set(0, 1.2, 9);
    OS-level prefers-reduced-motion is a stated accessibility
    preference, not a capability signal — it short-circuits straight
    to the low-quality path immediately, skipping the benchmark.
+
+   ?quality=high|medium|low overrides all of that at load, so the low
+   path can actually be exercised on a machine fast enough never to
+   trip the benchmark. It has to be read *here*, before the renderer
+   is constructed, because pixel ratio is set from `lowQuality` at
+   construction time and can't be un-decided afterwards. A forced tier
+   also skips the benchmark, so a deliberately chosen "high" is never
+   quietly downgraded mid-session.
+   Plan 3 Phase 4 replaces this with a real 3-tier table in quality.js;
+   until that middle tier exists, `medium` is an alias for `high`.
 ============================================================ */
-let lowQuality = prefersReducedMotion();
+const QUALITY_OVERRIDES = ['low', 'medium', 'high'];
+const rawQualityParam = new URLSearchParams(location.search).get('quality');
+const forcedQuality = QUALITY_OVERRIDES.includes(rawQualityParam) ? rawQualityParam : null;
+
+let lowQuality = prefersReducedMotion() || forcedQuality === 'low';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -830,9 +844,42 @@ function applyLowQuality() {
 // a fast benchmark result should override.
 const BENCHMARK_FRAME_COUNT = 60;
 const BENCHMARK_MS_THRESHOLD = 22; // ~45fps
-let benchmarkDone = lowQuality;
+let benchmarkDone = lowQuality || forcedQuality !== null;
 let benchmarkFrames = 0;
 let benchmarkTotal = 0;
+
+// Which quality path is live, for the perf HUD's readout. Deliberately
+// trivial — the boolean is all there is to name until Phase 4 turns it into
+// a real tier. "(forced)" marks a ?quality= override specifically, so a
+// reading can be told apart from one the benchmark arrived at on its own.
+function currentTierName() {
+  const tier = lowQuality ? 'low' : 'high';
+  return forcedQuality ? `${tier} (forced)` : tier;
+}
+
+// Live renderer/scene counters for the perf HUD (perfHud.js, ?perf=1 only).
+// An accessor rather than exporting the renderer itself, so the HUD can read
+// what it needs without anything else gaining a handle on the WebGL context.
+export function sceneStats() {
+  return {
+    calls: renderer.info.render.calls,
+    triangles: renderer.info.render.triangles,
+    textures: renderer.info.memory.textures,
+    geometries: renderer.info.memory.geometries,
+    renderedStars: renderedStarCount(),
+    tier: currentTierName(),
+    paused: animPaused
+  };
+}
+
+// Called at the end of every rendered frame with (frameDelta, now). One slot
+// is enough for its only consumer, the perf HUD; Phase 8 grows this into a
+// proper registry and moves the card-flip tween onto it, so mesh mutation and
+// rendering finally share a cadence.
+let onFrame = null;
+export function setOnFrame(fn) {
+  onFrame = fn;
+}
 
 // Pause rendering when tab is hidden to save CPU/GPU
 document.addEventListener('visibilitychange', () => {
@@ -923,6 +970,10 @@ function animate(now = 0) {
   stars.rotation.y = t * 0.005 * motionDamp;
 
   renderer.render(scene, camera);
+
+  // After the render, so the frame's draw-call/triangle counts are the ones
+  // the HUD reports rather than the previous frame's.
+  if (onFrame) onFrame(frameDelta, now);
 }
 animate();
 

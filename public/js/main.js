@@ -10,6 +10,22 @@ import './cardFlip.js';
 import { storageMode, setStorageMode, setPlanetsCache } from './state.js';
 
 /* ============================================================
+   PERF HUD (Plan 3 Phase 1) — opt in with ?perf=1. A dynamic import
+   rather than a static one so a normal load doesn't fetch, parse or
+   run the module at all: no HUD element, no frame callback, no
+   window.__perf. A measurement tool that changes what it measures
+   would be worse than none. Wrapped because a broken debug overlay
+   must never stop the app from starting.
+============================================================ */
+if (new URLSearchParams(location.search).get('perf') === '1') {
+  try {
+    await import('./perfHud.js');
+  } catch (e) {
+    console.warn('Perf HUD failed to load', e);
+  }
+}
+
+/* ============================================================
    BACKUP
 ============================================================ */
 const backupBtn = document.getElementById('backupBtn');
