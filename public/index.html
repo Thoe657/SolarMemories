@@ -264,7 +264,15 @@
 <!-- Card flip reading panel (Phase 7) -->
 <div class="card-flip-panel read-card" id="cardFlipPanel"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<!-- three.js is served from this repo, not a CDN. This is a local, personal,
+     offline-first app: loading it from cdnjs meant one failed DNS lookup stood
+     between the gallery and a blank screen, and every cold load waited on the
+     network for ~650KB. public/lib/three.min.js is checked in deliberately;
+     package.json pins three at the matching 0.160.0 as its provenance. Note
+     .gitignore ignores vendor/, which is why this lives in lib/ -- named
+     vendor/, the file would have been silently untracked and a fresh clone
+     would boot to a blank screen with nothing in the diff to explain it. -->
+<script src="lib/three.min.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

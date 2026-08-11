@@ -4,7 +4,23 @@
 // nebula palette). Requires the `canvas` devDependency (`npm install canvas
 // --save-dev`), which nothing else in the app needs.
 //
-// Usage: node scripts/build-backgrounds.js
+// Usage:
+//   node scripts/build-backgrounds.js --reencode   convert the PNGs already on
+//                                                  disk to lossless WebP
+//   node scripts/build-backgrounds.js              redraw the art from scratch
+//                                                  (writes WebP; --png for PNG)
+//
+// READ THIS BEFORE RUNNING IT WITHOUT --reencode. The drawing routine below is
+// seeded by Math.random(), so a plain run does not reproduce the skies that are
+// on disk — it invents new ones. That is fine when you actually want new art
+// and wrong every other time. Plan 3 Phase 7 wanted the existing skies in a
+// cheaper container with their pixels untouched, which is what --reencode does:
+// it decodes each PNG and re-encodes it as lossless WebP, so every pixel
+// survives and only the container changes. Verified bit-for-bit at the time.
+//
+// WebP rather than PNG because it is roughly half the bytes for identical
+// pixels. It needs the `sharp` devDependency (`npm install sharp --save-dev`);
+// like `canvas`, nothing `npm start` runs ever imports it.
 //
 // Mirrors the same procedural drawing routine that used to run in every
 // browser on every page load (paintGlow nebula blobs + dense baked stars +
@@ -15,6 +31,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createCanvas } = require('canvas');
+const sharp = require('sharp');
 
 const BG_W = 4096, BG_H = 2048;
 const OUT_DIR = path.join(__dirname, '..', 'public', 'assets', 'backgrounds');
@@ -106,12 +123,61 @@ function renderVariant({ blobs }) {
   return canvas;
 }
 
+// Lossless, and with the alpha channel dropped. Every one of these skies is
+// fully opaque -- checked, alpha is 255 everywhere -- so the channel was three
+// bytes of nothing per pixel. That costs little on the wire (a constant channel
+// compresses to almost nothing) but it is honest about what the image is.
+// effort 6 is sharp's default; the encode is a one-off, so the extra time is
+// free and the bytes are not.
+function toWebp(input) {
+  return sharp(input).removeAlpha().webp({ lossless: true, effort: 6 }).toBuffer();
+}
+
+async function reencode() {
+  for (const variant of VARIANTS) {
+    const pngPath = path.join(OUT_DIR, `${variant.name}.png`);
+    if (!fs.existsSync(pngPath)) {
+      console.log(`skipped ${variant.name}: no PNG on disk to re-encode`);
+      continue;
+    }
+    const before = fs.statSync(pngPath).size;
+    const buffer = await toWebp(pngPath);
+    const outPath = path.join(OUT_DIR, `${variant.name}.webp`);
+    fs.writeFileSync(outPath, buffer);
+
+    // Lossless has to mean lossless: decode both back to raw RGB and compare.
+    // This is the sky of a keepsake app, and "roughly the same" is not the deal.
+    const [a, b] = await Promise.all([
+      sharp(pngPath).removeAlpha().raw().toBuffer(),
+      sharp(outPath).removeAlpha().raw().toBuffer()
+    ]);
+    const identical = a.equals(b);
+    console.log(
+      `${variant.name}: ${(before / 1024).toFixed(0)}kb png -> ${(buffer.length / 1024).toFixed(0)}kb webp`
+      + ` (${Math.round((1 - buffer.length / before) * 100)}% smaller), pixels ${identical ? 'IDENTICAL' : 'DIFFER -- do not ship'}`
+    );
+    if (!identical) process.exitCode = 1;
+  }
+}
+
+async function redraw(wantPng) {
+  for (const variant of VARIANTS) {
+    const canvas = renderVariant(variant);
+    const png = canvas.toBuffer('image/png', { compressionLevel: 9 });
+    if (wantPng) {
+      const pngPath = path.join(OUT_DIR, `${variant.name}.png`);
+      fs.writeFileSync(pngPath, png);
+      console.log(`wrote ${pngPath} (${(png.length / 1024).toFixed(0)}kb)`);
+    }
+    const outPath = path.join(OUT_DIR, `${variant.name}.webp`);
+    const buffer = await toWebp(png);
+    fs.writeFileSync(outPath, buffer);
+    console.log(`wrote ${outPath} (${(buffer.length / 1024).toFixed(0)}kb)`);
+  }
+}
+
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
-VARIANTS.forEach((variant) => {
-  const canvas = renderVariant(variant);
-  const outPath = path.join(OUT_DIR, `${variant.name}.png`);
-  const buffer = canvas.toBuffer('image/png', { compressionLevel: 9 });
-  fs.writeFileSync(outPath, buffer);
-  console.log(`wrote ${outPath} (${(buffer.length / 1024).toFixed(0)}kb)`);
-});
+const args = process.argv.slice(2);
+(args.includes('--reencode') ? reencode() : redraw(args.includes('--png')))
+  .catch((e) => { console.error(e); process.exit(1); });

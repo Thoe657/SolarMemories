@@ -82,8 +82,13 @@ scene.add(hemi);
 const BG_VARIANTS = ['nebula-1', 'nebula-2', 'nebula-3'];
 const bgVariant = BG_VARIANTS[Math.floor(Math.random() * BG_VARIANTS.length)];
 
+// .webp, not .png: lossless-re-encoded by scripts/build-backgrounds.js
+// --reencode, so the pixels are bit-identical to the PNGs that shipped before
+// (verified by decoding both back to raw RGB) at 48% of the bytes. The PNGs
+// stay in the repo as the lossless source that re-encode reads -- the drawing
+// routine is seeded by Math.random() and can't reproduce them.
 const bgGeo = new THREE.SphereGeometry(60, 64, 64);
-const bgTex = new THREE.TextureLoader().load(`assets/backgrounds/${bgVariant}.png`);
+const bgTex = new THREE.TextureLoader().load(`assets/backgrounds/${bgVariant}.webp`);
 bgTex.colorSpace = THREE.SRGBColorSpace;
 bgTex.minFilter = THREE.LinearMipmapLinearFilter;
 bgTex.magFilter = THREE.LinearFilter;
