@@ -19,6 +19,23 @@ function toIndexEntry(doc) {
   return { ...doc, milestone: doc.milestone || false };
 }
 
+// Response-time projection only: strips the two heavy base64 payloads and
+// replaces them with booleans, so a list response is kilobytes instead of
+// megabytes. The client still needs to know a photo/audio *exists* before it
+// arrives, or it can't pick the right card placeholder. Nothing on disk
+// changes -- data/index.json keeps mirroring full records, and the media is
+// fetched per-record from GET /:id when it's actually needed.
+function toSlimEntry(entry) {
+  const { photoData, audioData, ...rest } = entry;
+  return { ...rest, hasPhoto: !!photoData, hasAudio: !!audioData };
+}
+
+// ?full=1 opts back into the old full-fat shape, byte for byte, for anything
+// that still wants the media inline.
+function wantsFull(req) {
+  return String(req.query.full || '') === '1';
+}
+
 // Finds the planet's newest moon and files the new star onto it if it has
 // room, otherwise creates the next moon (random pool name). Returns the
 // assigned moon's id. Must be called from inside withWriteLock.
@@ -47,6 +64,8 @@ function assignMoon(planetId) {
 // Reads the index rather than every memory file. The index mirrors full
 // records (including photoData/audioData) so the ring view keeps working
 // unchanged. Only non-deleted memories are ever added to the index.
+// Slim by default (see toSlimEntry): the ring's biggest load-time cost was
+// shipping every star's photo up front when only the visible ones need one.
 router.get('/', (req, res) => {
   try {
     const planetId = req.query.planet ? String(req.query.planet) : null;
@@ -55,6 +74,9 @@ router.get('/', (req, res) => {
       memories = memories.filter((m) => m.planetId === planetId);
     }
     memories = memories.slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    if (!wantsFull(req)) {
+      memories = memories.map(toSlimEntry);
+    }
     res.json({ memories });
   } catch (e) {
     console.error(e);
@@ -63,6 +85,9 @@ router.get('/', (req, res) => {
 });
 
 // Must be registered before GET /:id, or Express would match "trash" as an id.
+// Slim by default too: the trash panel renders a title and two buttons per row
+// and never touches the media, and restore/purge work off the id against the
+// archived file on disk -- so the payload was pure waste.
 router.get('/trash', (req, res) => {
   try {
     const planetId = req.query.planet ? String(req.query.planet) : null;
@@ -71,6 +96,9 @@ router.get('/trash', (req, res) => {
       memories = memories.filter((m) => m.planetId === planetId);
     }
     memories = memories.slice().sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+    if (!wantsFull(req)) {
+      memories = memories.map(toSlimEntry);
+    }
     res.json({ memories });
   } catch (e) {
     console.error(e);
@@ -79,12 +107,28 @@ router.get('/trash', (req, res) => {
 });
 
 // Full record, including photoData/audioData.
+//
+// ?media=photo (or audio) narrows it to just that one payload. Without it the
+// ring's lazy photo fetch would pull each card's *whole* record, audio and all
+// -- and since an audio memory is by far the biggest thing here (one clip in
+// the real data is 6.9MB against 80-300KB for a photo), fetching a card's photo
+// would drag down a recording nothing has asked to play yet. That put the whole
+// of Plan 3 Phase 5's saving straight back on the wire. Audio is only ever
+// wanted when a card is actually opened, which is cardFlip.js's business, and
+// that path still asks for the full record.
+const MEDIA_FIELDS = { photo: 'photoData', audio: 'audioData' };
+
 router.get('/:id', (req, res) => {
   try {
     const id = String(req.params.id);
     const memory = readRecord(MEMORIES_DIR, id);
     if (!memory) {
       return res.status(404).json({ error: 'memory not found' });
+    }
+    const field = MEDIA_FIELDS[String(req.query.media || '')];
+    if (field) {
+      // id included so a response can never be mistaken for a different card's.
+      return res.json({ memory: { id: memory.id, [field]: memory[field] || null } });
     }
     res.json({ memory });
   } catch (e) {

@@ -3,7 +3,7 @@
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
 import { makePolaroidTexture, makeMoonSurfaceTexture, makePortalLabelTexture, roundRect } from './cards.js';
-import { loadAllMemories, loadMoons } from './api.js';
+import { loadAllMemories, loadMemory, loadMoons } from './api.js';
 import { showStorageWarning } from './util.js';
 import {
   memories,
@@ -628,12 +628,20 @@ function disposeCardMesh(mesh) {
   mesh.geometry.dispose();
 }
 
+/* A photo memory's texture isn't "final" until its image has decoded
+   (refreshMemoryTexture regenerates + caches it then) — such a draw must never
+   be cached, or a re-entry would get stuck without the photo for the session.
+   Since Phase 5 that window is a network round trip and not a decode tick, and
+   it opens *before* photoData exists at all: the ring's list data carries only
+   hasPhoto. Testing photoData alone would therefore cache exactly the drawing
+   this guard exists to keep out of the cache. */
+function awaitingPhoto(memory) {
+  return memory.type === 'photo' && (memory.photoData || memory.hasPhoto) && !memory.photoImg;
+}
+
 export function addMemoryToScene(memory) {
   const cached = getCachedTexture(memory.id);
-  // A photo memory's texture isn't "final" until its image has decoded
-  // (refreshMemoryTexture regenerates + caches it then) — don't cache the
-  // interim placeholder-ish draw, or a re-entry would get stuck without it.
-  const stillAwaitingPhoto = memory.type === 'photo' && memory.photoData && !memory.photoImg;
+  const stillAwaitingPhoto = awaitingPhoto(memory);
   const tex = cached || makePolaroidTexture(memory);
   if (!cached && !stillAwaitingPhoto) cacheTexture(memory.id, tex);
   const aspect = 512 / 600;
@@ -658,6 +666,15 @@ export function addMemoryToScene(memory) {
   // sized for a ring that no longer exists.
   applyRingLayout();
 
+  // Ask for the photo from here rather than from showMoon(), so every way a
+  // star reaches the ring gets one: moon travel, a restored delete, a save
+  // that failed and fell back to showing the star anyway. A cache hit already
+  // has its final texture (photo and all), and loadPhotoImgFor is a no-op for
+  // anything that has its image already or has no photo to fetch. It must come
+  // after memory.mesh is set — that is what the fetch queue checks to know the
+  // card is still in the ring.
+  if (!cached) loadPhotoImgFor(memory);
+
   document.getElementById('emptyHint').classList.add('hidden');
 }
 
@@ -680,7 +697,12 @@ export function updateMemoryInScene(memory) {
   memory.mesh.material.map = newTex;
   memory.mesh.material.needsUpdate = true;
   memory.mesh.userData.memory = memory;
-  cacheTexture(memory.id, newTex);
+  // Same contract as addMemoryToScene: an edit that leaves the photo still
+  // undecoded (the edit form hands back photoData without a decoded image)
+  // has just drawn a card without its photo, and caching that would keep the
+  // photo off this card for the rest of the session.
+  if (!awaitingPhoto(memory)) cacheTexture(memory.id, newTex);
+  loadPhotoImgFor(memory);
 }
 
 /* ============================================================
@@ -735,8 +757,30 @@ export function clearLoadingPlaceholders() {
 }
 
 function refreshMemoryTexture(memory) {
+  // The one guard against a photo landing on a card that has left the ring:
+  // clearRenderedStars() nulls every rendered memory's `mesh`, so a fetch or
+  // decode that finishes after moon travel has nothing to write onto and
+  // simply stops here.
   if (!memory.mesh) return;
   const newTex = makePolaroidTexture(memory);
+
+  /* While a card is flipping or open, cardFlip.js owns material.map — the
+     back-of-card texture is on there and the stashed userData.frontMap is what
+     goes back on the way out — so hand the new drawing to *that* instead of
+     the live map. Writing it straight to material.map would show the photo on
+     the back of the card mid-flip and then have closeCard restore the
+     photoless front over the top of it. Before Phase 5 this race was one
+     decode tick wide and effectively unreachable; a network fetch makes it
+     seconds wide, and opening a card the moment it appears is exactly what
+     someone does when the ring is still filling in. */
+  if (memory.mesh.userData.flipping) {
+    const oldFront = memory.mesh.userData.frontMap;
+    if (oldFront && !oldFront.userData?.cached) oldFront.dispose();
+    memory.mesh.userData.frontMap = newTex;
+    cacheTexture(memory.id, newTex);
+    return;
+  }
+
   const oldMap = memory.mesh.material.map;
   if (oldMap && !oldMap.userData?.cached) oldMap.dispose();
   memory.mesh.material.map = newTex;
@@ -744,7 +788,95 @@ function refreshMemoryTexture(memory) {
   cacheTexture(memory.id, newTex);
 }
 
-function loadPhotoImgFor(memory) {
+/* ============================================================
+   LAZY PHOTO FETCH (Plan 3 Phase 5)
+
+   The ring's memories arrive slim — everything except photoData/audioData,
+   plus hasPhoto/hasAudio — so entering a planet costs a few KB instead of
+   every moon's media (7.21MB for a 4-star planet, measured). A card's photo
+   is then fetched one record at a time, for the viewed moon only, and lands
+   on the existing loadPhotoImgFor → refreshMemoryTexture path, which already
+   knew how to redraw a card once its image showed up.
+
+   Three things this has to get right:
+   - Concurrency. A full 28-star moon would otherwise open 28 requests at
+     once and hand the browser's connection pool a queue the user's next
+     action has to wait behind. Four at a time keeps the ring filling in
+     visibly from the start without saturating anything.
+   - Stale work. Travelling to another moon calls clearRenderedStars(), which
+     nulls every rendered memory's `mesh`. refreshMemoryTexture stops there on
+     its own, but a download that nobody will draw still holds one of the four
+     slots the moon you *are* looking at needs, so the whole lot is aborted
+     and the queue emptied.
+   - Doing it once. photoData/photoImg persist on the memory object, so coming
+     back to a moon redraws from what is already in hand; `photoFetchPending`
+     covers the window before that where a second request for the same card
+     could be queued behind the first.
+============================================================ */
+const PHOTO_FETCH_CONCURRENCY = 4;
+
+const photoFetchQueue = [];             // memories waiting for a slot
+const photoFetchPending = new Set();    // ids queued or in flight, so nothing is asked for twice
+const photoFetchControllers = new Set();
+let photoFetchActive = 0;
+// Bumped by cancelPhotoFetches(). An aborted request's .finally() still runs,
+// a turn or two after the new moon has already queued its own cards — without
+// this it would clear a pending flag belonging to that new queue and let the
+// same card be asked for twice.
+let photoFetchEpoch = 0;
+
+function pumpPhotoFetches() {
+  while (photoFetchActive < PHOTO_FETCH_CONCURRENCY && photoFetchQueue.length > 0) {
+    const memory = photoFetchQueue.shift();
+    // Left the ring while it sat in the queue — don't spend a request on it.
+    if (!memory.mesh) {
+      photoFetchPending.delete(memory.id);
+      continue;
+    }
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (controller) photoFetchControllers.add(controller);
+    const epoch = photoFetchEpoch;
+    photoFetchActive++;
+
+    // 'photo' — the photo and nothing else. Asking for the whole record here
+    // was measured pulling 7.56MB to draw a 4-card ring, because one of those
+    // memories carries a 6.9MB audio clip: the card needs its picture, and
+    // nothing wants the recording until the card is opened. That single query
+    // parameter is the difference between this phase working and not.
+    loadMemory(memory.id, controller?.signal, 'photo')
+      .then((full) => {
+        if (full.photoData) memory.photoData = full.photoData;
+        decodePhotoInto(memory);
+      })
+      .catch((e) => {
+        if (e?.name === 'AbortError') return; // we cancelled it; not a failure
+        // Left deliberately quiet beyond the console: one card without its
+        // photo is a much smaller thing than a toast over the whole ring, and
+        // re-entering the moon retries (nothing was cached, so the card is
+        // still marked as awaiting its photo).
+        console.warn('Could not load a card photo', e);
+      })
+      .finally(() => {
+        if (controller) photoFetchControllers.delete(controller);
+        if (epoch === photoFetchEpoch) photoFetchPending.delete(memory.id);
+        photoFetchActive--;
+        pumpPhotoFetches();
+      });
+  }
+}
+
+// Drop everything outstanding. Called from clearRenderedStars(), i.e. exactly
+// when the meshes these were for stop existing.
+function cancelPhotoFetches() {
+  photoFetchEpoch++;
+  photoFetchQueue.length = 0;
+  photoFetchControllers.forEach((c) => c.abort());
+  photoFetchControllers.clear();
+  photoFetchPending.clear();
+}
+
+function decodePhotoInto(memory) {
   if (!memory.photoData) return;
   const img = new Image();
   img.onload = () => {
@@ -754,10 +886,28 @@ function loadPhotoImgFor(memory) {
   img.src = memory.photoData;
 }
 
+// "Make sure this card ends up showing its photo." Three states: the image is
+// already decoded (nothing to do), the bytes are in hand but not decoded, or
+// neither — in which case the record says whether there is a photo to go and
+// get at all.
+function loadPhotoImgFor(memory) {
+  if (memory.photoImg) return;
+  if (memory.photoData) {
+    decodePhotoInto(memory);
+    return;
+  }
+  if (memory.type !== 'photo' || !memory.hasPhoto) return;
+  if (photoFetchPending.has(memory.id)) return;
+  photoFetchPending.add(memory.id);
+  photoFetchQueue.push(memory);
+  pumpPhotoFetches();
+}
+
 // Tear down every mesh currently in the ring (stars and any loading
 // placeholders) without touching `memories` — used both when leaving a planet
 // and when travelling to another of its moons.
 function clearRenderedStars() {
+  cancelPhotoFetches();
   cardGroup.children.slice().forEach((mesh) => {
     disposeCardMesh(mesh);
     cardGroup.remove(mesh);
@@ -966,12 +1116,11 @@ export function showMoon(moonIndex) {
   clearRenderedStars();
   setCurrentMoonIndex(moonIndex);
 
-  starsOnViewedMoon(memories, currentMoons, moonIndex).forEach((mem) => {
-    addMemoryToScene(mem);
-    // a cache hit already has its final texture (photo decoded and all) —
-    // no need to re-decode the image and regenerate it
-    if (!getCachedTexture(mem.id)) loadPhotoImgFor(mem);
-  });
+  // addMemoryToScene asks for each card's photo itself (only for cards that
+  // need one, and only once), so this stays a plain add — the ring is the only
+  // thing whose photos are ever fetched, which is what keeps the other moons'
+  // media off the wire.
+  starsOnViewedMoon(memories, currentMoons, moonIndex).forEach(addMemoryToScene);
 
   updatePortals();
   updateMoonLabel();

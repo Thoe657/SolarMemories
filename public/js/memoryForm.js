@@ -2,7 +2,7 @@
    UI: ADD MEMORY FORM — form logic, photo compression
 ============================================================ */
 import { addMemoryToScene, placeNewStar, updateMemoryInScene } from './scene.js';
-import { persistMemory } from './api.js';
+import { persistMemory, loadMemory } from './api.js';
 import { showStorageWarning, showToast } from './util.js';
 import { memories, currentPlanetId, storageMode, updateMemoryInState } from './state.js';
 
@@ -297,18 +297,78 @@ function validateForm() {
 memTitle.addEventListener('input', validateForm);
 memText.addEventListener('input', validateForm);
 
+function decodeDataUrl(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+/* Pulls a memory's media back before its edit form is filled in, and refuses
+   the edit if it can't.
+
+   Why this is the most dangerous few lines in the file. Since Plan 3 Phase 5
+   the records in `memories` arrive slim: hasPhoto/hasAudio instead of the
+   base64 itself. The save handler below sends whatever is in the pending*
+   fields as the memory's *whole* new content, and the server upserts by id —
+   so pre-filling them from a slim record would post photoData: null over a
+   real photo and audioData: null over a real recording. These files are
+   irreplaceable and there is no undo for an edit. Hence: fetch first, verify
+   the media actually came back, and on any doubt don't open the form at all.
+   Refusing to edit is an inconvenience; the alternative is a memory quietly
+   losing the thing it was made of.
+
+   Usually a no-op: the card was just open, and cardFlip.js's own fetch has
+   already put the bytes on this same object. Returns true if it is safe to
+   proceed. */
+async function ensureFullRecordForEdit(memory) {
+  const needsPhoto = !!memory.hasPhoto && !memory.photoData;
+  const needsAudio = !!memory.hasAudio && !memory.audioData;
+  if (!needsPhoto && !needsAudio) return true;
+  try {
+    const full = await loadMemory(memory.id);
+    // A record that came back without the media it says it has is not a
+    // memory with no photo — it's a load that went wrong in a way that would
+    // look exactly like a deliberate deletion once saved.
+    if ((needsPhoto && !full.photoData) || (needsAudio && !full.audioData)) {
+      throw new Error('came back without its photo/audio');
+    }
+    memory.photoData = full.photoData || memory.photoData || null;
+    memory.audioData = full.audioData || memory.audioData || null;
+    return true;
+  } catch (e) {
+    console.warn('Could not load that memory for editing', e);
+    showStorageWarning(`couldn't open that memory for editing (${e.message || 'connection error'}) — nothing has been changed. Check that the gallery server is running, then try again.`);
+    return false;
+  }
+}
+
 // Optional `memory` arg switches the form into edit mode: pre-fills every
 // field from the passed memory (instead of the blank/reset state) and the
 // save handler below reuses its id rather than minting a new one.
-function openAddForm(memory) {
+async function openAddForm(memory) {
   if (memory) {
+    if (!await ensureFullRecordForEdit(memory)) return;
+    // The decoded image, not just the bytes: it is what the card texture is
+    // drawn from, and saving with it null would redraw this star as a
+    // photoless placeholder. The ring usually has it already; decoding it here
+    // covers an edit made before the card's lazy photo fetch finished.
+    const photoImg = memory.photoImg
+      || (memory.photoData ? await decodeDataUrl(memory.photoData) : null);
+
+    // Everything below this line is synchronous on purpose: every await this
+    // function does is above it, so the form can't be half-filled with one
+    // memory's content while a click on "add a memory" resets it out from
+    // under this one.
     editingMemoryId = memory.id;
     memTitle.value = memory.title || '';
     memDate.value = memory.date || '';
     memText.value = memory.text || '';
     memMilestone.checked = !!memory.milestone;
     pendingPhotoDataUrl = memory.photoData || null;
-    pendingPhotoImg = memory.photoImg || null;
+    pendingPhotoImg = photoImg;
     pendingAudioDataUrl = memory.audioData || null;
     pendingRelatedIds = (memory.relatedIds || []).map(String);
     relatedSearch.value = '';
@@ -376,6 +436,22 @@ addOverlay.addEventListener('click', (e) => {
 
 saveMemBtn.addEventListener('click', async () => {
   if (editingMemoryId != null) {
+    /* The same hazard ensureFullRecordForEdit() guards on the way in, checked
+       once more on the way out — because this is the request that actually
+       overwrites the file. A record that says it has a photo, about to be
+       saved without one, means the pre-fill lost it somewhere between there
+       and here; there is no path through this form that legitimately empties
+       an attachment (replacing one always leaves the new bytes behind), so
+       this can only ever fire on a bug, and the right thing to do with a bug
+       here is nothing at all. */
+    const original = memories.find((m) => String(m.id) === String(editingMemoryId));
+    if (original && ((original.hasPhoto && !pendingPhotoDataUrl) || (original.hasAudio && !pendingAudioDataUrl))) {
+      console.error('Refusing to save an edit that would drop this memory\'s photo/audio', editingMemoryId);
+      showStorageWarning('something went wrong loading this memory\'s photo/audio, so your changes weren\'t saved — the memory itself is untouched. Reload and try again.');
+      closeAddForm();
+      return;
+    }
+
     const memory = {
       id: editingMemoryId,
       type: currentType,

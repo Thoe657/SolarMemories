@@ -4,8 +4,8 @@
    positioned over the card's on-screen rect with the full readable
    content (text, audio, related-memory chips).
 ============================================================ */
-import { deleteMemory as deleteMemoryRemote, restoreMemory as restoreMemoryRemote } from './api.js';
-import { escapeHtml, showStorageWarning } from './util.js';
+import { deleteMemory as deleteMemoryRemote, restoreMemory as restoreMemoryRemote, loadMemory } from './api.js';
+import { escapeHtml, showStorageWarning, showToast } from './util.js';
 import { formatDate, makeCardBackTexture } from './cards.js';
 import { removeMemoryFromScene, addMemoryToScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount } from './scene.js';
 import { memories, currentMoons, currentMoonIndex } from './state.js';
@@ -158,11 +158,58 @@ function getRelatedMemories(memory) {
     .filter(Boolean);
 }
 
+/* ============================================================
+   FETCHING THE MEDIA (Plan 3 Phase 5)
+
+   The panel is the only place a memory's audio is ever played and the only
+   place its photo is shown full size, and since Phase 5 the record in
+   `memories` carries hasPhoto/hasAudio rather than the bytes. So opening a
+   card is where the bytes are asked for — the whole point of the phase being
+   that a 6.9MB audio clip isn't downloaded to draw a ring nobody has clicked.
+
+   The bytes are kept on the memory object afterwards, so reopening the same
+   card (or editing it straight from the panel) doesn't ask again.
+============================================================ */
+// Opening the panel waits on the fetch below, so a request that never answers
+// would leave the card stuck mid-flip with the camera locked and no way back.
+// Give up rather than hang: the panel then opens without the media, which is
+// recoverable, unlike a frozen screen.
+const MEDIA_FETCH_TIMEOUT = 8000;
+
+async function ensureMediaLoaded(memory) {
+  const needsPhoto = memory.hasPhoto && !memory.photoData;
+  const needsAudio = memory.hasAudio && !memory.audioData;
+  if (!needsPhoto && !needsAudio) return;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = setTimeout(() => controller?.abort(), MEDIA_FETCH_TIMEOUT);
+  try {
+    const full = await loadMemory(memory.id, controller?.signal);
+    if (full.photoData) memory.photoData = full.photoData;
+    if (full.audioData) memory.audioData = full.audioData;
+  } catch (e) {
+    // The panel below renders whatever it actually has, so a failure here
+    // costs the photo/audio and not the memory — but silently showing a photo
+    // memory as text only would read as data loss, hence the toast.
+    console.warn('Could not load this memory\'s photo/audio', e);
+    showToast('couldn\'t load this memory\'s photo/audio — check the gallery server.', true);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function renderRelatedMemoriesHtml(memory) {
   const related = getRelatedMemories(memory);
   if (related.length === 0) return '';
   let html = '<div class="related-memories">';
   related.forEach((m) => {
+    /* Thumbnail only when the photo is already in hand — i.e. the related
+       memory is on the moon you're looking at, or you've opened it this
+       session. Deliberately no fetch: a chip is a 22px circle, and the only
+       way to fill it is a full record each, so five related memories would
+       pull megabytes (their audio included) to decorate five buttons — the
+       exact cost Phase 5 exists to remove, spent on the smallest thing on
+       screen. Without it the chip is its title, which is how every related
+       letter and audio memory has always rendered. */
     const thumb = m.type === 'photo' && m.photoData ? `<img src="${m.photoData}" alt="" />` : '';
     html += `<button class="related-memory-chip" data-id="${escapeHtml(String(m.id))}">${thumb}<span>${escapeHtml(m.title || 'untitled memory')}</span></button>`;
   });
@@ -216,9 +263,14 @@ function renderContent(memory) {
   });
 
   panel.querySelectorAll('.related-memory-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
+    chip.addEventListener('click', async () => {
       const target = memories.find((m) => String(m.id) === chip.dataset.id);
-      if (target) renderContent(target); // swaps in place, doesn't close/reopen
+      if (!target) return;
+      // Same media fetch the card open does — swapping to a related memory
+      // shows it in the panel just as fully, photo and audio included.
+      await ensureMediaLoaded(target);
+      if (state !== 'open') return; // panel was closed while that was in flight
+      renderContent(target); // swaps in place, doesn't close/reopen
     });
   });
 
@@ -276,7 +328,18 @@ async function openCard(memory, mesh) {
   mesh.userData.flipping = true;
   setDragLocked(true);
 
+  // Started here rather than after the flip so the round trip happens *during*
+  // the 400ms the card spends turning over — on a local server that is usually
+  // the whole of it, and the panel opens with its photo already there.
+  const mediaReady = ensureMediaLoaded(memory);
+
+  // Stashed before the flip, not after it. scene.js may be part-way through
+  // fetching this card's photo, and when it arrives refreshMemoryTexture hands
+  // the redrawn front to userData.frontMap rather than to the live map (which
+  // is the back of the card by then) — so the slot has to already exist, or
+  // assigning it afterwards would put the photoless drawing back.
   const frontMap = mesh.material.map;
+  mesh.userData.frontMap = frontMap;
   const backMap = makeCardBackTexture(memory);
   // A 180° Y-rotation shows the mesh's back face, which mirrors the
   // texture horizontally by default -- cancel that out so the back-of-card
@@ -292,8 +355,12 @@ async function openCard(memory, mesh) {
     }
   });
 
-  mesh.userData.frontMap = frontMap;
   mesh.userData.backMap = backMap;
+
+  // Whatever the fetch above is going to produce, the panel is drawn from the
+  // finished record — never from a half-loaded one that would render a photo
+  // memory as text only.
+  await mediaReady;
 
   positionPanel(rect);
   renderContent(memory);
