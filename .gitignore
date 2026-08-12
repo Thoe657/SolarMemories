@@ -53,6 +53,8 @@ temp/
 #other
 docs/
 node/
+# graphify knowledge graph — generated, ~1.1MB, rebuilt by the post-commit hook
+graphify-out/
 data/
 data.bak-*/
 data.test-*/

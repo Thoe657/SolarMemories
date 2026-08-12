@@ -365,3 +365,36 @@ scoped into a real plan:
   "Verifying changes cheaply": text signals first, a screenshot only when the question is
   genuinely visual.
 - If a phase's diff touches more than ~5 files outside its designated area, stop and flag it.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+  A `post-commit` hook (`graphify hook install`) already does this automatically for code
+  changes; docs are not covered by the hook and need a manual update.
+
+**The corpus deliberately excludes `public/lib/three.min.js` and `public/assets/backgrounds/*`.**
+A plain `/graphify .` re-includes both and ruins the graph — don't run one without re-applying
+the exclusions. The first build (2026-08-12) did include them, and three.min.js alone was 76%
+of nodes and 77% of edges while sharing **zero** edges with app code: a disjoint blob of
+minified identifiers (`We`, `jn`, `ke`) that swamped every god node, community hub and
+suggested question. Its names are mangler output, so nothing in it is searchable or
+actionable, and it is pinned (`three: 0.160.0`) and vendored on purpose — there is nothing
+to refactor there. The nebula PNGs/WebPs are procedural art and cost vision tokens to
+describe as "purple nebula". Excluding both took the graph from 2103 nodes / 136 communities
+(65 too thin to report) to 568 / 24 (none thin).
+
+`CLAUDE.md`, `MEMORY.md`, `README.md` and `index.html` **are** in the corpus, and that is the
+point: the rationale in this file is linked to the symbols it explains, so a query for e.g.
+ring layout returns `ringSlot()`/`applyRingLayout()` *and* the reasons they are shaped that
+way. Docs go through semantic extraction and cost tokens (the 2026-08-12 run: ~97k input);
+code is AST-only and free. Re-extract docs only when they change materially.
+
+Known soft spot: `src/config.js`'s constants are under-linked — the AST models the config
+exports as destructured import blobs, so doc edges aimed at `MOON_STAR_CAP`, `DATA_DIR`, etc.
+land nowhere and get dropped (41 such edges, ~3% of raw, on the first clean build).
