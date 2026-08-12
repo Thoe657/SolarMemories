@@ -33,7 +33,7 @@ import {
 } from './quality.js';
 // `label` is aliased because this file already uses that word for the portals'
 // caption-plate meshes and for the string drawn on them.
-import { label as themeLabel, groupingName } from './theme.js';
+import { label as themeLabel, groupingName, themeConfig, DEFAULT_THEME } from './theme.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -76,22 +76,40 @@ const hemi = new THREE.HemisphereLight(0x6f5a8a, 0x2a1830, 0.6);
 scene.add(hemi);
 
 /* ----- Background: full starry night sky (equirectangular gradient + nebula glow) -----
-   Phase 14: baked offline by scripts/build-backgrounds.js (see that file for the
-   original procedural drawing routine this replaced) into a few PNG variants under
-   public/assets/backgrounds/, loaded here instead of running the same canvas-drawing
-   work in every browser on every page load. One is picked at random per session for
-   some variety; the smaller dynamic star/fairy-light layers on top (below) still keep
-   the sky feeling alive. ----- */
-const BG_VARIANTS = ['nebula-1', 'nebula-2', 'nebula-3'];
-const bgVariant = BG_VARIANTS[Math.floor(Math.random() * BG_VARIANTS.length)];
+   Plan 1 Phase 14: baked offline by scripts/build-backgrounds.js into image variants
+   under public/assets/backgrounds/, loaded here instead of running the same
+   canvas-drawing work in every browser on every page load. One is picked at random per
+   session for some variety; the smaller dynamic star/fairy-light layers on top (below)
+   still keep the sky feeling alive.
 
-// .webp, not .png: lossless-re-encoded by scripts/build-backgrounds.js
-// --reencode, so the pixels are bit-identical to the PNGs that shipped before
-// (verified by decoding both back to raw RGB) at 48% of the bytes. The PNGs
-// stay in the repo as the lossless source that re-encode reads -- the drawing
-// routine is seeded by Math.random() and can't reproduce them.
+   WHICH FAMILY comes from theme.js (Plan 4 Phase 3), not from a list here -- solar
+   gets the warm `nebula-*` skies, universe the cool banded `universe-*` ones. Only the
+   *family* moved; the random-variant-per-load selection below is the same logic this
+   file has always had. Reaching for the registry rather than branching on the theme
+   name is the point: a third theme is a registry entry, not an edit to this file.
+
+   The theme is fixed for the life of the page (theme.js's "fixed at load"), so the
+   sky can never be the other theme's -- there is nothing to reload here on a theme
+   change because a theme change is a reload. ----- */
+const bgFamily = themeConfig().backgrounds;
+// Degrade to the default theme's family rather than requesting "undefined" if a
+// registry entry ever ships without a sky, matching theme.js's own posture that a
+// bad theme record falls back instead of throwing mid-render.
+const bgPaths = bgFamily && bgFamily.length ? bgFamily : themeConfig(DEFAULT_THEME).backgrounds;
+const bgPath = bgPaths[Math.floor(Math.random() * bgPaths.length)];
+
+// .webp, not .png: a fraction of the bytes for art that is generated rather than
+// scanned. Plan 4 Phase 3 moved these to lossy q95 (~390kb each, smaller than the
+// lossless skies Plan 3 Phase 7 shipped) after checking the failure mode lossy
+// actually risks -- banding on the smooth nebula gradients -- rather than assuming
+// it; see the WEBP_OPTIONS note in scripts/build-backgrounds.js. The PNGs stay in
+// the repo as the lossless source the re-encode reads.
+//
+// The sky must stay fully OPAQUE (Plan 3 Phase 7): the encoder drops the alpha
+// channel, and this material does not enable transparency. Don't composite anything
+// behind it -- there is nothing back there.
 const bgGeo = new THREE.SphereGeometry(60, 64, 64);
-const bgTex = new THREE.TextureLoader().load(`assets/backgrounds/${bgVariant}.webp`);
+const bgTex = new THREE.TextureLoader().load(bgPath);
 bgTex.colorSpace = THREE.SRGBColorSpace;
 bgTex.minFilter = THREE.LinearMipmapLinearFilter;
 bgTex.magFilter = THREE.LinearFilter;
