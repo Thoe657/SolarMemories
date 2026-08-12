@@ -847,6 +847,103 @@
     pointer-events: none;
   }
 
+  /* ----- The spiral picker (Plan 4 Phase 6, universe only) -----
+
+     Nothing below has a solar counterpart: `.spiral-arms`, `.galaxy-body` and
+     `.halo` are only ever written by planetPicker.js under
+     themeFlag('spiralPicker'), and `.galaxy-motion` only under that flag plus
+     a non-low tier. So these rules are gated by the markup rather than by a
+     :root[data-theme] prefix, which keeps them readable — every selector here
+     is dead in solar by construction. */
+
+  /* The arm layer replaces the four .orbit-ring guides. Fixed-pixel, because
+     the whole orbit chain is fixed-pixel: nothing in it scales with the
+     viewport, so an arm layer that did would be the one thing introducing a
+     viewport dependency into placement that placement never had. */
+  .spiral-arms {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    overflow: visible;
+    /* Scoped here, not in the [data-theme] token blocks above. Those mirror
+       theme.js's `tokens` map one-for-one so the two can be checked by diffing
+       rather than by eye, and this is not a content-surface colour cards.js
+       ever needs — it is a local constant for one decorative layer that only
+       exists in universe. Keeping it on the element it styles preserves both
+       the invariant and the "tunable from the stylesheet" point. */
+    --arm-glow: rgba(150, 180, 255, 0.16);
+    /* The bands are generated as hard-edged polygons; the softness is all
+       here. Blur for the edge, the mask for the inner/outer fade — without
+       it a broad band reads as a pie slice rather than an arm. */
+    filter: blur(9px);
+    -webkit-mask-image: radial-gradient(closest-side, rgba(0,0,0,0) 3%, #000 19%, #000 74%, rgba(0,0,0,0) 99%);
+    mask-image: radial-gradient(closest-side, rgba(0,0,0,0) 3%, #000 19%, #000 74%, rgba(0,0,0,0) 99%);
+  }
+
+  .spiral-arm {
+    fill: var(--arm-glow, rgba(150, 180, 255, 0.16));
+  }
+
+  /* Real spirals are not symmetric; one arm always carries more. */
+  .spiral-arm:nth-child(2) {
+    opacity: 0.78;
+  }
+
+  /* A galaxy icon: a flat disc with two arms, not a shaded sphere. On a
+     ::before rather than on .planet-body itself, because the moon dots are
+     real children of the body — put the rotation there and they would spin
+     with it, and put the mask there and they would fade with it. */
+  .planet-body.galaxy-body::before {
+    content: '';
+    position: absolute;
+    /* Wider than the core so the arms have somewhere to be. */
+    inset: -30%;
+    border-radius: 50%;
+    pointer-events: none;
+    /* Two narrow wedges with real gaps between them. The first pass used 98°
+       wedges and it read as a fuzzy ball at 34px: two arms 98° wide leave
+       almost no dark sky between them, and "spiral" is carried by the gaps. */
+    background: conic-gradient(from 0deg,
+      transparent 0deg,
+      var(--planet-accent, #ffd9a0) 16deg,
+      transparent 58deg,
+      transparent 180deg,
+      var(--planet-accent, #ffd9a0) 196deg,
+      transparent 238deg,
+      transparent 360deg);
+    /* Hollow in the middle: the core is the body's own radial gradient, and
+       an arm layer painted over it would just thicken the ball. */
+    -webkit-mask-image: radial-gradient(closest-side, transparent 14%, #000 40%, rgba(0,0,0,0.55) 78%, transparent 100%);
+    mask-image: radial-gradient(closest-side, transparent 14%, #000 40%, rgba(0,0,0,0.55) 78%, transparent 100%);
+  }
+
+  /* The motion that replaces orbiting: a galaxy turns in place. The class is
+     put on .orbits by planetPicker.js and taken off again at the low tier —
+     which is also how prefers-reduced-motion lands here, since quality.js
+     forces low for it. The @media block below is belt and braces. */
+  .orbits.galaxy-motion .planet-body.galaxy-body::before {
+    animation: galaxy-spin var(--galaxy-spin-duration, 84s) linear infinite;
+    animation-direction: var(--galaxy-spin-direction, normal);
+  }
+
+  @keyframes galaxy-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .orbits.galaxy-motion .planet-body.galaxy-body::before { animation: none; }
+  }
+
+  /* The moon dots, held still and cooled to match. Same elements, same
+     information (one dot per unlocked grouping) — restyled, not dropped. */
+  .planet-moon.halo {
+    background: rgba(214, 230, 255, 0.7);
+    box-shadow: 0 0 5px rgba(168, 196, 255, 0.55);
+  }
+
   .new-planet-form {
     position: fixed;
     z-index: 1010;

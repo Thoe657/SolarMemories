@@ -11,7 +11,7 @@ import { currentTier, tierSettings, onTierChange } from './quality.js';
 /* Imported as `themeLabel` rather than `label`, here and in scene.js: both
    files already use `label` for DOM/texture-caption locals, and a themed
    string silently shadowed by a <span> would be a very quiet bug. */
-import { label as themeLabel, currentTheme, DEFAULT_THEME } from './theme.js';
+import { label as themeLabel, themeFlag, currentTheme, DEFAULT_THEME } from './theme.js';
 
 /* ============================================================
    PLANET PICKER — twinkling background stars
@@ -487,18 +487,168 @@ const NEW_PLANET_RING = 0;
 // reads as "lots" rather than smearing into a solid ring.
 const MAX_MOON_SATELLITES = 6;
 
+/* ============================================================
+   THE SPIRAL (Plan 4 Phase 6, decision 7)
+
+   `universe` keeps the polar layout and adds one term:
+
+     θ = (idx / count) * 360 + ring * 23 + ARM_WINDING * radius
+
+   The evenly-spread term and the per-ring offset are untouched, so a whole
+   ring rotates together and no new collisions can appear. Everything below
+   is gated on themeFlag('spiralPicker') — false in solar, where every line
+   of this section is dead.
+
+   ARM_WINDING IS THE ONE CONSTANT, read by the placement above *and* by
+   armPath() below. That is the plan's load-bearing rule: bake the arms into
+   an image and the planets drift off them. (This install's placement turns
+   out to be viewport-invariant fixed pixels, so drift was never the live
+   risk here — but the shared constant is still the construction that makes
+   drift impossible rather than merely unobserved.)
+
+   WHY THE ARMS ARE BROAD. Put a planet at base angle β on ring radius r and
+   an arm centre at base angle α, and both pick up the same ARM_WINDING * r:
+   the winding term cancels exactly and the planet's angular distance from
+   the arm is |β − α|, at every radius. So "is every planet on an arm" is a
+   question about the *base* angles alone — and those are (idx/count)*360 +
+   ring*23, with a different count and a different offset per ring. Ring 3
+   with four planets alone puts base angles 90° apart, which mod a two-arm
+   180° period forces an occupied span of 90°. A thin arm therefore *cannot*
+   contain every planet, and the plan explicitly forbids retuning the spread
+   to make one fit. Real arms are tens of degrees wide, so the arms are drawn
+   broad instead, and armGeometry() derives the phase from the angles that
+   actually got rendered rather than guessing one.
+============================================================ */
+
+// Degrees of sweep per pixel of radius. ~0.35 gives ~80° across RING_RADII
+// (90 → 320), which reads as an arm. Real spirals are logarithmic; over
+// three rings linear is indistinguishable.
+const ARM_WINDING = 0.35;
+const ARM_COUNT = 2;
+// Nominal half-width of the drawn band. Widened only if the rendered planets
+// need it, and never past ARM_HALF_WIDTH_MAX_DEG — past that the two arms
+// have merged into a disc and "on an arm" has stopped meaning anything, so
+// the right answer is to report it, not to keep widening.
+const ARM_HALF_WIDTH_DEG = 52;
+const ARM_FIT_MARGIN_DEG = 6;
+const ARM_HALF_WIDTH_MAX_DEG = 80;
+// Fixed-pixel, exactly like RING_RADII: nothing in the orbit chain scales
+// with the viewport, so the arm layer must not either.
+const ARM_INNER_R = 26;
+const ARM_OUTER_R = 396;
+const ARM_BOX = 800;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Last resolved arm geometry, kept for armLayout() at the bottom of this
+// section. Null until the first spiral render, and forever in solar.
+let lastArmGeometry = null;
+
+/* Where the arms sit, given the base angles of everything rendered.
+
+   With ARM_COUNT arms the pattern repeats every `spacing` degrees, so fold
+   the base angles into one period, find the widest empty gap, and centre the
+   arm on the arc opposite it. That is the phase minimising the worst
+   planet's distance from an arm, and it falls out of one pass. */
+function armGeometry(baseAngles) {
+  const spacing = 360 / ARM_COUNT;
+  const wrap = (a) => ((a % spacing) + spacing) % spacing;
+  const vals = baseAngles.map(wrap).sort((a, b) => a - b);
+
+  let gapStart = 0;
+  let gap = spacing; // nothing rendered: any phase is as good as any other
+  if (vals.length) {
+    gap = -1;
+    for (let i = 0; i < vals.length; i++) {
+      const next = i + 1 < vals.length ? vals[i + 1] : vals[0] + spacing;
+      if (next - vals[i] > gap) { gap = next - vals[i]; gapStart = vals[i]; }
+    }
+  }
+  const phase = wrap(gapStart + gap / 2 + spacing / 2);
+  const required = (spacing - gap) / 2; // half-width the worst planet needs
+  const halfWidth = Math.min(
+    ARM_HALF_WIDTH_MAX_DEG,
+    Math.max(ARM_HALF_WIDTH_DEG, required + ARM_FIT_MARGIN_DEG)
+  );
+  return { phase, required, halfWidth, contained: required + ARM_FIT_MARGIN_DEG <= halfWidth };
+}
+
+/* One filled band, traced as a closed loop: out along its trailing edge,
+   round the outer rim, back along its leading edge, round the inner rim.
+
+   THE RIM CAPS ARE NOT DECORATION. The band sweeps ~130° of angle and is
+   ~104° wide, so closing the loop with the implicit straight chord between
+   the two edge ends cuts a line right back across the band's own middle —
+   a self-intersecting polygon, which reads as a slice taken out of the arm
+   and makes any point-in-polygon test on it meaningless. Following the
+   constant radius instead keeps the boundary simple, and gives the arm a
+   rounded end rather than a guillotined one.
+
+   Same ARM_WINDING as the placement formula, by construction. */
+function armPath(centreBase, halfWidth) {
+  const STEPS = 48;
+  const CAP_STEPS = 10;
+  const pt = (r, deg) => {
+    const rad = (deg * Math.PI) / 180;
+    // CSS rotate() is clockwise on a y-down screen, and SVG's y is down too,
+    // so this is the same (cos, sin) the .orbit-spin/.orbit-offset pair traces.
+    return `${(r * Math.cos(rad)).toFixed(2)} ${(r * Math.sin(rad)).toFixed(2)}`;
+  };
+  const centre = (r) => centreBase + ARM_WINDING * r;
+  const points = [];
+  // trailing edge, inner radius → outer
+  for (let i = 0; i <= STEPS; i++) {
+    const r = ARM_INNER_R + (ARM_OUTER_R - ARM_INNER_R) * (i / STEPS);
+    points.push(pt(r, centre(r) - halfWidth));
+  }
+  // outer rim cap
+  for (let i = 1; i <= CAP_STEPS; i++) {
+    points.push(pt(ARM_OUTER_R, centre(ARM_OUTER_R) - halfWidth + (2 * halfWidth * i) / CAP_STEPS));
+  }
+  // leading edge, outer radius → inner
+  for (let i = 0; i <= STEPS; i++) {
+    const r = ARM_OUTER_R - (ARM_OUTER_R - ARM_INNER_R) * (i / STEPS);
+    points.push(pt(r, centre(r) + halfWidth));
+  }
+  // inner rim cap, back to the start
+  for (let i = 1; i < CAP_STEPS; i++) {
+    points.push(pt(ARM_INNER_R, centre(ARM_INNER_R) + halfWidth - (2 * halfWidth * i) / CAP_STEPS));
+  }
+  return `M${points.join('L')}Z`;
+}
+
+function buildSpiralArms(geom) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'spiral-arms');
+  svg.setAttribute('viewBox', `${-ARM_BOX / 2} ${-ARM_BOX / 2} ${ARM_BOX} ${ARM_BOX}`);
+  svg.setAttribute('width', String(ARM_BOX));
+  svg.setAttribute('height', String(ARM_BOX));
+  svg.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < ARM_COUNT; i++) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'spiral-arm');
+    path.setAttribute('d', armPath(geom.phase + i * (360 / ARM_COUNT), geom.halfWidth));
+    svg.appendChild(path);
+  }
+  return svg;
+}
+
+/* The in-place rotation that replaces the orbital motion. Tier-gated the way
+   the starfield is: prefers-reduced-motion forces the low tier through
+   quality.js's precedence chain, so gating on the tier covers it for free.
+   Re-applied on every tier change so a mid-session downgrade actually stops
+   the animation instead of leaving N compositing layers spinning. */
+function applyGalaxyMotion() {
+  orbitsContainer.classList.toggle(
+    'galaxy-motion',
+    themeFlag('spiralPicker') && currentTier() !== 'low'
+  );
+}
+applyGalaxyMotion();
+onTierChange(applyGalaxyMotion);
+
 export function renderSolarSystem() {
   orbitsContainer.innerHTML = '';
-
-  // always draw all ring guides, regardless of whether anything
-  // currently orbits them
-  RING_RADII.forEach((radius) => {
-    const ring = document.createElement('div');
-    ring.className = 'orbit-ring';
-    ring.style.width = `${radius * 2}px`;
-    ring.style.height = `${radius * 2}px`;
-    orbitsContainer.appendChild(ring);
-  });
+  const spiral = themeFlag('spiralPicker');
 
   // group planets by their assigned ring (default ring index 1, the
   // innermost selectable ring) so multiple planets on the same ring
@@ -509,6 +659,27 @@ export function renderSolarSystem() {
     if (!ringGroups.has(ring)) ringGroups.set(ring, []);
     ringGroups.get(ring).push(g);
   });
+
+  if (spiral) {
+    // The arms go where the ring guides go — first, so tree order alone puts
+    // them behind every planet and no z-index is needed, same as the rings.
+    const baseAngles = [180]; // the "+ new planet" icon's own fixed angle
+    ringGroups.forEach((planetsOnRing, ring) => {
+      planetsOnRing.forEach((_, idx) => baseAngles.push((idx / planetsOnRing.length) * 360 + ring * 23));
+    });
+    lastArmGeometry = armGeometry(baseAngles);
+    orbitsContainer.appendChild(buildSpiralArms(lastArmGeometry));
+  } else {
+    // always draw all ring guides, regardless of whether anything
+    // currently orbits them
+    RING_RADII.forEach((radius) => {
+      const ring = document.createElement('div');
+      ring.className = 'orbit-ring';
+      ring.style.width = `${radius * 2}px`;
+      ring.style.height = `${radius * 2}px`;
+      orbitsContainer.appendChild(ring);
+    });
+  }
 
   let sizeIndex = 0;
   ringGroups.forEach((planetsOnRing, ring) => {
@@ -528,16 +699,19 @@ export function renderSolarSystem() {
   addPlanet({ __isNew: true }, RING_RADII[NEW_PLANET_RING], 26 + NEW_PLANET_RING * 16, 'normal', 180, 34);
 }
 
+/* Exposed for verification only (the phase's acceptance is "every planet's
+   centre falls inside a drawn band", which is a number, not a look). Null in
+   solar, where no arms are drawn. */
+export function armLayout() {
+  return lastArmGeometry && { ...lastArmGeometry, winding: ARM_WINDING, arms: ARM_COUNT };
+}
+
 function addPlanet(g, radius, duration, direction, startAngle, size) {
+  const spiral = themeFlag('spiralPicker');
+
   // rotating container
   const spin = document.createElement('div');
   spin.className = 'orbit-spin';
-  spin.style.animationDuration = `${duration}s`;
-  spin.style.animationDirection = direction;
-  // negative delay offsets the starting angle without fighting the
-  // animation's own transform
-  const delay = `${-(startAngle / 360) * duration}s`;
-  spin.style.animationDelay = delay;
 
   // static radius offset (not animated)
   const offset = document.createElement('div');
@@ -547,9 +721,32 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
   // counter-rotating planet icon, keeps its label upright
   const planet = document.createElement('div');
   planet.className = 'planet';
-  planet.style.animationDuration = `${duration}s`;
-  planet.style.animationDirection = direction;
-  planet.style.animationDelay = delay;
+
+  if (spiral) {
+    /* Static, not paused: `animation-play-state: paused` would hold a
+       compositing layer per planet for motion that never happens. The same
+       two-layer trick still runs — the outer layer carries the angle, the
+       inner one cancels it so the label stays upright — it is just written
+       as a transform instead of animated through. `.planet`'s
+       translate(-50%,-50%) has to be restated here: dropping it moves the
+       click target off the circle you can see. */
+    const theta = startAngle + ARM_WINDING * radius;
+    spin.style.animation = 'none';
+    spin.style.transform = `rotate(${theta}deg)`;
+    planet.style.animation = 'none';
+    planet.style.transform = `translate(-50%, -50%) rotate(${-theta}deg)`;
+  } else {
+    spin.style.animationDuration = `${duration}s`;
+    spin.style.animationDirection = direction;
+    // negative delay offsets the starting angle without fighting the
+    // animation's own transform
+    const delay = `${-(startAngle / 360) * duration}s`;
+    spin.style.animationDelay = delay;
+
+    planet.style.animationDuration = `${duration}s`;
+    planet.style.animationDirection = direction;
+    planet.style.animationDelay = delay;
+  }
 
   const body = document.createElement('div');
   body.className = 'planet-body';
@@ -576,8 +773,31 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
     planet.addEventListener('click', () => openNewPlanetForm());
   } else {
     const color = g.accentColor || '#ffd9a0';
-    body.style.background = `radial-gradient(circle at 35% 35%, #fff, ${color} 55%, ${color} 100%)`;
-    body.style.boxShadow = `0 0 18px 6px ${color}66, 0 0 36px 14px ${color}33`;
+    if (spiral) {
+      /* Criterion 1's third lever: a shaded sphere and a flat spiral disc are
+         different silhouettes, and the silhouette is what survives cropping
+         the text out. The disc lives on a ::before rather than on the body
+         itself so the moon dots (real children of .planet-body) neither
+         inherit the rotation nor get masked by it, and so :hover's scale on
+         the body still works untouched. --planet-accent is how the per-planet
+         colour reaches a pseudo-element. */
+      body.classList.add('galaxy-body');
+      body.style.setProperty('--planet-accent', color);
+      // Deterministic, index-free spread: same planet, same spin, every render.
+      body.style.setProperty('--galaxy-spin-duration', `${70 + (size % 5) * 11}s`);
+      body.style.setProperty('--galaxy-spin-direction', size % 2 === 0 ? 'normal' : 'reverse');
+      // A tight bulge, not a ball: the core has to stay small enough that the
+      // arms on the ::before are what the eye reads first.
+      body.style.background = `radial-gradient(circle at 50% 50%, #fff 0%, ${color} 12%, ${color}00 42%)`;
+      /* One wide, faint layer rather than solar's two. A tight bright layer
+         puts a lit ring immediately outside the element, and since the disc
+         itself is transparent past its core that ring draws a hard dark
+         circle where the element's own box ends. */
+      body.style.boxShadow = `0 0 26px 8px ${color}16`;
+    } else {
+      body.style.background = `radial-gradient(circle at 35% 35%, #fff, ${color} 55%, ${color} 100%)`;
+      body.style.boxShadow = `0 0 18px 6px ${color}66, 0 0 36px 14px ${color}33`;
+    }
     label.textContent = g.name;
     addMoonSatellites(body, size, g.moonCount || 0);
 
@@ -603,21 +823,41 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
 // separate "stay upright" counter-rotation layer the way the planet
 // icon + label do.
 function addMoonSatellites(body, planetSize, moonCount) {
+  const spiral = themeFlag('spiralPicker');
   const count = Math.min(moonCount, MAX_MOON_SATELLITES);
   for (let i = 0; i < count; i++) {
-    const orbitRadius = planetSize / 2 + 4 + i * 3; // just outside the icon, growing per satellite
-    const orbitDuration = 4 + Math.random() * 5; // seconds -- fast enough to read as motion, not a sweep
-    const orbitDirection = i % 2 === 0 ? 'normal' : 'reverse';
-    const startPhase = Math.random() * 360;
+    let orbitRadius = planetSize / 2 + 4 + i * 3; // just outside the icon, growing per satellite
 
     const orbit = document.createElement('div');
     orbit.className = 'planet-moon-orbit';
-    orbit.style.animationDuration = `${orbitDuration}s`;
-    orbit.style.animationDirection = orbitDirection;
-    orbit.style.animationDelay = `${-(startPhase / 360) * orbitDuration}s`;
+
+    if (spiral) {
+      /* Orbiting dots inside an otherwise-static spiral is the one place the
+         two themes' logic would visibly contradict, so in universe these are
+         a still halo instead.
+
+         THE ANGLE HAS TO BE DERIVED, NOT ROLLED. Solar's start phase is
+         Math.random(), which is invisible there because the dots are moving
+         anyway — but renderSolarSystem() runs again on every create, delete
+         and return from a planet, so a *static* scatter built on it would
+         silently reshuffle each time. The golden angle spreads i points as
+         evenly as any sequence can without knowing how many there will be,
+         which is exactly the case here (the count is capped, not fixed). */
+      const GOLDEN_ANGLE = 137.508;
+      orbitRadius = planetSize / 2 + 6 + i * 2.6;
+      orbit.style.animation = 'none';
+      orbit.style.transform = `rotate(${(i * GOLDEN_ANGLE) % 360}deg)`;
+    } else {
+      const orbitDuration = 4 + Math.random() * 5; // seconds -- fast enough to read as motion, not a sweep
+      const orbitDirection = i % 2 === 0 ? 'normal' : 'reverse';
+      const startPhase = Math.random() * 360;
+      orbit.style.animationDuration = `${orbitDuration}s`;
+      orbit.style.animationDirection = orbitDirection;
+      orbit.style.animationDelay = `${-(startPhase / 360) * orbitDuration}s`;
+    }
 
     const moon = document.createElement('div');
-    moon.className = 'planet-moon';
+    moon.className = spiral ? 'planet-moon halo' : 'planet-moon';
     const moonSize = Math.max(2, planetSize * 0.1);
     moon.style.width = `${moonSize}px`;
     moon.style.height = `${moonSize}px`;

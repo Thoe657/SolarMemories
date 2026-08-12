@@ -129,6 +129,11 @@ const REGISTRY = {
       // keeps `ring` meaning exactly what it means today); only the thing at
       // the centre is renamed, and maddi is never given a noun on screen.
       ringHint: 'closest to farthest from the sun',
+      // The field label above those dots. Phase 2 left it alone deliberately —
+      // it is not a noun from the vocabulary table — but Phase 6 turns the
+      // rings into spiral arms, and "orbit" then describes a layout that is no
+      // longer there.
+      ringField: 'orbit',
       // the topbar / edit panel
       editPlanet: 'edit planet',
       editPlanetAria: 'Edit this planet',
@@ -206,6 +211,7 @@ const REGISTRY = {
       // a hint under three orbit dots, and the long form is a description of
       // maddi rather than a direction. Named in the plan explicitly.
       ringHint: 'closest to farthest from the centre',
+      ringField: 'arm',
       editPlanet: 'edit galaxy',
       editPlanetAria: 'Edit this galaxy',
       backToPlanetsAria: 'Back to galaxies',
