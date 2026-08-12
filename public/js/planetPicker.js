@@ -7,6 +7,7 @@ import { showStorageWarning } from './util.js';
 import { clearGalleryScene, loadPlanetMemories, showLoadingPlaceholders, setOnPortalClick, showMoon, pauseScene, resumeScene } from './scene.js';
 import { currentPlanet, planetsCache, setCurrentPlanet, setPlanetsCache } from './state.js';
 import { prefersReducedMotion } from './motionPreference.js';
+import { currentTier, tierSettings, onTierChange } from './quality.js';
 
 /* ============================================================
    PLANET PICKER — twinkling background stars
@@ -40,15 +41,36 @@ import { prefersReducedMotion } from './motionPreference.js';
     return { el: layerEl, parallax: layer.parallax };
   });
 
-  // Subtle parallax tied to pointer position -- each layer drifts opposite
-  // the pointer by its own amount, and the CSS transition on .star-layer
-  // smooths/lags the movement instead of tracking it 1:1.
-  window.addEventListener('pointermove', (e) => {
-    const nx = e.clientX / window.innerWidth - 0.5;
-    const ny = e.clientY / window.innerHeight - 0.5;
+  /* Subtle parallax tied to pointer position -- each layer drifts opposite
+     the pointer by its own amount, and the CSS transition on .star-layer
+     smooths/lags the movement instead of tracking it 1:1.
+
+     The handler only records where the pointer is; the transforms are written
+     once per frame from a rAF. pointermove fires far above frame rate on a
+     high-polling mouse, and this writes three transforms per event -- each one
+     invalidating the layers' composited position for a frame that hadn't been
+     drawn yet, so all but the last were discarded. Reading clientX/clientY and
+     writing style in the same handler is also a layout-thrash pattern; the rAF
+     puts the writes in one place. Nothing here uses scene.js's frame registry
+     on purpose: this is the picker, and since Phase 2 the scene's loop is
+     paused whenever the picker is the screen you're looking at. */
+  let parallaxX = 0;
+  let parallaxY = 0;
+  let parallaxQueued = false;
+
+  function writeParallax() {
+    parallaxQueued = false;
     layerEls.forEach(({ el, parallax }) => {
-      el.style.transform = `translate(${-nx * parallax}px, ${-ny * parallax}px)`;
+      el.style.transform = `translate(${-parallaxX * parallax}px, ${-parallaxY * parallax}px)`;
     });
+  }
+
+  window.addEventListener('pointermove', (e) => {
+    parallaxX = e.clientX / window.innerWidth - 0.5;
+    parallaxY = e.clientY / window.innerHeight - 0.5;
+    if (parallaxQueued) return;
+    parallaxQueued = true;
+    requestAnimationFrame(writeParallax);
   });
 
   // Occasional shooting stars, every 8-15s (randomized so there's no
@@ -90,12 +112,25 @@ import { prefersReducedMotion } from './motionPreference.js';
 const hyperspaceCanvas = document.getElementById('hyperspaceCanvas');
 const hyCtx = hyperspaceCanvas.getContext('2d');
 
+/* Backing store scale. The low tier draws this canvas at 70% in each axis and
+   CSS stretches it back — half the pixels for streaks that are motion-blurred
+   smears by design, on the machine least able to afford them. Moon travel is
+   the app's showiest moment and it should not be its jerkiest. High and medium
+   draw 1:1, so nothing changes there. */
+function hyperspaceScale() {
+  return currentTier() === 'low' ? 0.7 : 1;
+}
+
 function resizeHyperspaceCanvas() {
-  hyperspaceCanvas.width = window.innerWidth;
-  hyperspaceCanvas.height = window.innerHeight;
+  const s = hyperspaceScale();
+  hyperspaceCanvas.width = Math.max(1, Math.round(window.innerWidth * s));
+  hyperspaceCanvas.height = Math.max(1, Math.round(window.innerHeight * s));
 }
 resizeHyperspaceCanvas();
 window.addEventListener('resize', resizeHyperspaceCanvas);
+// A tier change alters the backing-store scale, so the canvas has to be resized
+// for it -- otherwise a downgrade mid-session keeps drawing at full resolution.
+onTierChange(resizeHyperspaceCanvas);
 
 /* Two intensities of the same effect. `planet` is the original, unchanged:
    crossing between planets. `moon` is the escalation used for hopping
@@ -133,21 +168,48 @@ function playHyperspace(onMid, kind = 'planet') {
     const preset = HYPERSPACE_PRESETS[prefersReducedMotion() ? 'planet' : kind]
       || HYPERSPACE_PRESETS.planet;
     const DURATION = preset.duration;
-    const STAR_COUNT = preset.starCount;
+    // Star count comes from the tier, not the preset: 420/220 at high,
+    // 260/160 at medium, 140/100 at low (quality.js's TIER_SETTINGS). The
+    // preset's own starCount is the high-tier figure and stays as the
+    // reference for what the effect was designed to look like.
+    const kindKey = preset === HYPERSPACE_PRESETS.moon ? 'moon' : 'planet';
+    const STAR_COUNT = tierSettings().hyperspaceStars[kindKey];
     const cx = hyperspaceCanvas.width / 2;
     const cy = hyperspaceCanvas.height / 2;
     const maxR = Math.hypot(cx, cy);
 
-    const starsData = [];
+    /* Stars are bucketed by (colour, width) so a frame is one path per bucket
+       instead of one beginPath/stroke per star — 420 stroke calls a frame for
+       the moon trip, at full window resolution, was the plan's finding 11.
+
+       lineWidth is a per-stroke property, not a per-path one, so batching by
+       colour alone would have flattened every streak to one thickness and
+       changed the look. Instead each star's random width is *rounded to a
+       0.5px step when it is created*, so the width it draws at is exactly its
+       bucket's — nothing is approximated at draw time. Widths run 1–4px, which
+       is 7 steps; times 5 colours for the moon preset that is at most 35
+       buckets a frame rather than 420, and the planet preset's single colour
+       collapses to 7. At these sizes, on streaks that are motion blur by
+       design, a 0.5px quantisation of the *distribution* is not visible. */
+    const WIDTH_STEP = 0.5;
+    const buckets = new Map();
     for (let i = 0; i < STAR_COUNT; i++) {
-      starsData.push({
+      const rawWidth = Math.random() < 0.85 ? 1 + Math.random() * 1.5 : 2 + Math.random() * 2;
+      const width = Math.round(rawWidth / WIDTH_STEP) * WIDTH_STEP;
+      const color = preset.colors[Math.floor(Math.random() * preset.colors.length)];
+      const key = `${color}|${width}`;
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { color, width, stars: [] };
+        buckets.set(key, bucket);
+      }
+      bucket.stars.push({
         angle: Math.random() * Math.PI * 2,
         start: Math.random() * 0.5, // normalized starting distance from center
-        speed: (0.6 + Math.random() * 1.2) * preset.speedScale,
-        width: Math.random() < 0.85 ? 1 + Math.random() * 1.5 : 2 + Math.random() * 2,
-        color: preset.colors[Math.floor(Math.random() * preset.colors.length)]
+        speed: (0.6 + Math.random() * 1.2) * preset.speedScale
       });
     }
+    const bucketList = [...buckets.values()];
 
     hyperspaceCanvas.classList.add('active');
     let midFired = false;
@@ -166,19 +228,22 @@ function playHyperspace(onMid, kind = 'planet') {
       hyCtx.fillRect(0, 0, hyperspaceCanvas.width, hyperspaceCanvas.height);
 
       const travel = t; // 0 -> 1 progress for streak length/position
-      starsData.forEach((s) => {
-        const dist = (s.start + travel * s.speed) * maxR;
-        const prevDist = Math.max(0, dist - (8 + travel * 60) * s.speed * preset.trailScale);
-        const x1 = cx + Math.cos(s.angle) * prevDist;
-        const y1 = cy + Math.sin(s.angle) * prevDist;
-        const x2 = cx + Math.cos(s.angle) * dist;
-        const y2 = cy + Math.sin(s.angle) * dist;
-
-        hyCtx.strokeStyle = `rgba(${s.color}, ${0.25 + 0.65 * intensity})`;
-        hyCtx.lineWidth = s.width * (0.5 + intensity);
+      // Alpha depends only on intensity, which is per-frame, so every star in a
+      // bucket shares a strokeStyle as well as a lineWidth — one path each.
+      const alpha = 0.25 + 0.65 * intensity;
+      const widthScale = 0.5 + intensity;
+      bucketList.forEach((bucket) => {
+        hyCtx.strokeStyle = `rgba(${bucket.color}, ${alpha})`;
+        hyCtx.lineWidth = bucket.width * widthScale;
         hyCtx.beginPath();
-        hyCtx.moveTo(x1, y1);
-        hyCtx.lineTo(x2, y2);
+        bucket.stars.forEach((s) => {
+          const dist = (s.start + travel * s.speed) * maxR;
+          const prevDist = Math.max(0, dist - (8 + travel * 60) * s.speed * preset.trailScale);
+          const cos = Math.cos(s.angle);
+          const sin = Math.sin(s.angle);
+          hyCtx.moveTo(cx + cos * prevDist, cy + sin * prevDist);
+          hyCtx.lineTo(cx + cos * dist, cy + sin * dist);
+        });
         hyCtx.stroke();
       });
 

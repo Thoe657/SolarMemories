@@ -1414,7 +1414,14 @@ renderer.domElement.style.touchAction = 'none';
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('gesturechange', (e) => e.preventDefault());
 
+/* One pointerdown listener, not two. There used to be a second one further
+   down recording the press position for the click-vs-drag test; they were on
+   the same element, fired on the same event, and only differed in what they
+   stored. Both jobs live here now — starting a look-around drag, and
+   remembering where the press began. */
+let downPos = { x: 0, y: 0 };
 renderer.domElement.addEventListener('pointerdown', (e) => {
+  downPos = { x: e.clientX, y: e.clientY };
   if (dragLocked) return;
   isDragging = true;
   prevX = e.clientX;
@@ -1423,19 +1430,40 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 
 window.addEventListener('pointerup', () => { isDragging = false; });
 
+/* pointermove does no work beyond recording where the pointer is; the camera
+   is moved once per frame from what it recorded.
+
+   A gaming mouse polls at 1000Hz and the browser will happily deliver events
+   at that rate (coalesced or not), so the old handler ran its arithmetic up to
+   ~16 times per frame at 60fps and ~33 at the low tier's 30 — and every one of
+   those but the last was overwritten before anything was drawn. Accumulating
+   the delta and applying it in the frame callback below gives identical camera
+   motion, because the deltas are summed rather than sampled: drag speed and
+   the 0.004 rad/px feel are unchanged. */
+let pendingDragDX = 0;
+let pendingDragDY = 0;
+
 window.addEventListener('pointermove', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
   if (!isDragging || dragLocked) return;
-  const dx = e.clientX - prevX;
-  const dy = e.clientY - prevY;
+  pendingDragDX += e.clientX - prevX;
+  pendingDragDY += e.clientY - prevY;
   prevX = e.clientX;
   prevY = e.clientY;
-  targetYaw -= dx * 0.004;
-  targetPitch += dy * 0.004;
-  targetPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, targetPitch));
 });
+
+// Drains a frame's worth of accumulated pointer movement into the camera
+// angles. Called from animate() before the camera is updated.
+function applyPendingDrag() {
+  if (pendingDragDX === 0 && pendingDragDY === 0) return;
+  targetYaw -= pendingDragDX * 0.004;
+  targetPitch += pendingDragDY * 0.004;
+  targetPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, targetPitch));
+  pendingDragDX = 0;
+  pendingDragDY = 0;
+}
 
 // Callback invoked with (memory, mesh) when a card is clicked (only if not
 // dragged much). The caller (cardFlip.js) wires this up to the flip + read
@@ -1445,11 +1473,8 @@ export function setOnCardClick(fn) {
   onCardClick = fn;
 }
 
-/* Click to open a memory (only if not dragged much) */
-let downPos = { x: 0, y: 0 };
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  downPos = { x: e.clientX, y: e.clientY };
-});
+/* Click to open a memory (only if not dragged much). The press position this
+   compares against is recorded by the single pointerdown listener above. */
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (dragLocked) return; // a card is already flipping/open
   const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
@@ -1692,13 +1717,56 @@ export function sceneStats() {
   };
 }
 
-// Called at the end of every rendered frame with (frameDelta, now). One slot
-// is enough for its only consumer, the perf HUD; Phase 8 grows this into a
-// proper registry and moves the card-flip tween onto it, so mesh mutation and
-// rendering finally share a cadence.
-let onFrame = null;
+/* ----- Frame callbacks -----
+   Called at the end of every *rendered* frame with (frameDelta, now).
+
+   Why anything that animates the scene belongs here rather than on its own
+   requestAnimationFrame: this loop is throttled to the tier's target FPS and,
+   since Phase 2, does not run at all while the scene is paused. A parallel rAF
+   chain ignores both. The card flip used to be exactly that — at the low tier
+   it computed its tween roughly twice per frame that was actually drawn, so
+   half the work it did was overwritten before anyone saw it, and it would have
+   gone on mutating meshes for a scene that had stopped rendering.
+
+   Iterating a copy so a callback can remove itself mid-frame — which the flip
+   tween does on its last frame — without the loop skipping its neighbour. */
+const frameCallbacks = new Set();
+
+export function addFrameCallback(fn) {
+  frameCallbacks.add(fn);
+  return () => frameCallbacks.delete(fn);
+}
+
+export function removeFrameCallback(fn) {
+  frameCallbacks.delete(fn);
+}
+
+// Kept for perfHud.js, which owns one slot and replaces rather than adds.
+// Phase 1 shipped this shape and the HUD is outside Phase 8's scope.
+let hudFrameCallback = null;
 export function setOnFrame(fn) {
-  onFrame = fn;
+  if (hudFrameCallback) frameCallbacks.delete(hudFrameCallback);
+  hudFrameCallback = fn;
+  if (fn) frameCallbacks.add(fn);
+}
+
+/* Notified when the scene stops rendering, so anything mid-animation on the
+   frame registry can finish itself off instead of being stranded.
+
+   This exists because of a hazard the registry created. The card-flip tween
+   used to run on its own requestAnimationFrame and completed regardless of
+   what the scene was doing; on the registry it only advances while frames are
+   being drawn. The topbar's "planets" button is live during a flip, and it
+   pauses the scene — so a click there mid-flip would leave the tween frozen,
+   its promise unsettled, and setDragLocked(true) never undone, which is a
+   camera that no longer responds until the page is reloaded. Listeners here
+   are expected to jump straight to their end state: nothing is on screen at
+   this point, so there is nothing to animate, only bookkeeping to settle. */
+const sceneStopListeners = new Set();
+
+export function onSceneStop(fn) {
+  sceneStopListeners.add(fn);
+  return () => sceneStopListeners.delete(fn);
 }
 
 // Recomputes animPaused from the two reasons above and handles the edges of
@@ -1716,6 +1784,9 @@ function updatePauseState() {
     // drawn at all — the opposite of what this phase is for. Resetting once on
     // the way in makes "paused" read honestly as 0.
     renderer.info.reset();
+    // Let anything animating on the frame registry settle: it will get no more
+    // frames, and a half-finished tween holds locks nothing will release.
+    sceneStopListeners.forEach((fn) => fn());
     return;
   }
 
@@ -1777,6 +1848,9 @@ function animate(now = 0) {
   if (frameDelta > 0 && frameDelta < 200) sampleFrameTime(frameDelta);
 
   const t = clock.getElapsedTime();
+
+  // A frame's worth of pointer movement, summed, applied once.
+  applyPendingDrag();
 
   yaw += (targetYaw - yaw) * 0.08;
   pitch += (targetPitch - pitch) * 0.08;
@@ -1850,7 +1924,9 @@ function animate(now = 0) {
 
   // After the render, so the frame's draw-call/triangle counts are the ones
   // the HUD reports rather than the previous frame's.
-  if (onFrame) onFrame(frameDelta, now);
+  if (frameCallbacks.size > 0) {
+    for (const fn of Array.from(frameCallbacks)) fn(frameDelta, now);
+  }
 }
 animate();
 

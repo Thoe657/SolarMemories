@@ -7,7 +7,7 @@
 import { deleteMemory as deleteMemoryRemote, restoreMemory as restoreMemoryRemote, loadMemory } from './api.js';
 import { escapeHtml, showStorageWarning, showToast } from './util.js';
 import { formatDate, makeCardBackTexture } from './cards.js';
-import { removeMemoryFromScene, addMemoryToScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount } from './scene.js';
+import { removeMemoryFromScene, addMemoryToScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount, addFrameCallback, onSceneStop } from './scene.js';
 import { memories, currentMoons, currentMoonIndex } from './state.js';
 import { openAddForm } from './memoryForm.js';
 
@@ -27,6 +27,9 @@ const UNDO_TOAST_DURATION = 6000;
 let state = 'idle';
 let flippedMesh = null; // the mesh actually being flip-animated
 let displayedMemory = null; // whichever memory's content is currently shown
+// Cancellation token for an open/close in progress -- bumped by abandonFlip()
+// when the scene stops under it. See the comment there.
+let flipGeneration = 0;
 
 /* ============================================================
    INLINE UNDO TOAST (Phase 10) — complements, doesn't replace, the
@@ -96,10 +99,25 @@ function animateFlip(mesh, { reverse, onHalfway }) {
     const fromScale = reverse ? 1.08 : 1;
     const toScale = reverse ? 1 : 1.08;
     let halfwayFired = false;
-    const start = performance.now();
 
-    function frame(now) {
-      const t = Math.min((now - start) / FLIP_DURATION, 1);
+    /* Driven by scene.js's frame registry, not its own requestAnimationFrame.
+       Two reasons, both from Plan 3. The scene's loop is throttled to the
+       tier's target FPS, so a parallel rAF chain at display rate computed this
+       tween about twice per frame that was actually drawn at the low tier —
+       half of it thrown away unseen. And since Phase 2 the loop stops entirely
+       when the planet view isn't on screen; a tween on its own chain would go
+       on mutating a mesh nobody is rendering.
+
+       Progress comes from the frame's own delta rather than performance.now(),
+       so the flip lasts FLIP_DURATION of *rendered* time. A now-based tween
+       would keep advancing across a stall and the card would snap to wherever
+       the wall clock had reached. If the scene stops altogether, the tween is
+       abandoned rather than finished — see onSceneStop below. */
+    let elapsed = 0;
+    let stop = null;
+    let unlisten = null;
+
+    function settle(t) {
       const eased = easeInOutQuad(t);
       mesh.rotation.y = fromRot + (toRot - fromRot) * eased;
       const s = fromScale + (toScale - fromScale) * eased;
@@ -110,13 +128,36 @@ function animateFlip(mesh, { reverse, onHalfway }) {
         onHalfway();
       }
 
-      if (t < 1) {
-        requestAnimationFrame(frame);
-      } else {
+      if (t >= 1) {
+        stop();
+        unlisten();
         resolve();
       }
     }
-    requestAnimationFrame(frame);
+
+    function frame(frameDelta) {
+      elapsed += frameDelta;
+      settle(Math.min(elapsed / FLIP_DURATION, 1));
+    }
+
+    stop = addFrameCallback(frame);
+    /* If the scene stops rendering mid-flip — the topbar's "planets" button is
+       live during one — this tween will never get another frame, so it has to
+       take itself out of the registry. Otherwise it would sit there and resume
+       mutating the mesh the next time frames run, on a planet that may not even
+       be this one.
+
+       Deliberately *not* settle(1): abandonFlip() below has already run by this
+       point (it is registered first, at module load) and put the mesh back to
+       its front face. Finishing the tween here would fire onHalfway and swap
+       the card's back texture in over the top of that. Resolve so nothing is
+       left awaiting; the generation check in openCard/closeCard stops them
+       going any further. */
+    unlisten = onSceneStop(() => {
+      stop();
+      unlisten(); // or this tween's listener outlives the flip it belonged to
+      resolve();
+    });
   });
 }
 
@@ -322,6 +363,7 @@ async function deleteMemoryAndClose(memory) {
 async function openCard(memory, mesh) {
   if (state !== 'idle') return; // re-entry guard
   state = 'opening';
+  const generation = flipGeneration;
 
   const rect = getMeshScreenRect(mesh);
   flippedMesh = mesh;
@@ -355,16 +397,27 @@ async function openCard(memory, mesh) {
     }
   });
 
+  // Abandoned while we were awaiting — the scene stopped and abandonFlip()
+  // already put this mesh and the panel back. Every await below is a point
+  // where that can have happened; carrying on would re-open a panel over a
+  // planet the viewer has left.
+  if (generation !== flipGeneration) {
+    backMap.dispose();
+    return;
+  }
+
   mesh.userData.backMap = backMap;
 
   // Whatever the fetch above is going to produce, the panel is drawn from the
   // finished record — never from a half-loaded one that would render a photo
   // memory as text only.
   await mediaReady;
+  if (generation !== flipGeneration) return;
 
   positionPanel(rect);
   renderContent(memory);
   await fadePanel(true);
+  if (generation !== flipGeneration) return;
 
   state = 'open';
 }
@@ -372,8 +425,12 @@ async function openCard(memory, mesh) {
 async function closeCard() {
   if (state !== 'open') return;
   state = 'closing';
+  const generation = flipGeneration;
 
   await fadePanel(false);
+  // Same abandonment check as openCard: if the scene stopped during the fade,
+  // abandonFlip() has already put everything back and flippedMesh is null.
+  if (generation !== flipGeneration) return;
   panel.innerHTML = '';
 
   const mesh = flippedMesh;
@@ -387,11 +444,56 @@ async function closeCard() {
     }
   });
 
+  if (generation !== flipGeneration) return;
   mesh.userData.flipping = false;
   setDragLocked(false);
   flippedMesh = null;
   displayedMemory = null;
   state = 'idle';
 }
+
+/* Leaving a planet with a card open used to strand the whole view.
+
+   setDragLocked(true) is set when a card opens and only ever cleared by
+   closeCard(), and nothing closed the card on the way out to the picker — so
+   coming back left `state` at 'open', the drag lock on, and a stale panel over
+   the ring. Both the camera and every card click test that lock first, so the
+   planet was frozen until a reload. That predates Plan 3; it is fixed here
+   because Phase 8 moved the flip tween onto the scene's frame registry, which
+   is what made "the scene stopped" an event this file can see at all.
+
+   flipGeneration is the cancellation token. Resolving a tween's promise isn't
+   enough on its own: openCard/closeCard resume on a microtask *after* this
+   handler returns, so without a token they would carry on and re-open the
+   panel over a planet that is no longer on screen. Bumping the generation
+   makes every await in those functions bail instead.
+
+   Tear down rather than animate: by the time this fires the whiteout covers
+   the screen and the planet view is gone, so there is nothing to play out. */
+
+function abandonFlip() {
+  if (state === 'idle') return;
+  flipGeneration++;
+  panel.classList.remove('visible');
+  panel.innerHTML = '';
+  const mesh = flippedMesh;
+  if (mesh) {
+    mesh.rotation.y = mesh.userData.baseRotY;
+    mesh.scale.set(1, 1, 1);
+    mesh.userData.flipping = false;
+    if (mesh.userData.frontMap) {
+      mesh.material.map = mesh.userData.frontMap;
+      mesh.material.needsUpdate = true;
+    }
+    mesh.userData.backMap?.dispose();
+    mesh.userData.backMap = null;
+  }
+  setDragLocked(false);
+  flippedMesh = null;
+  displayedMemory = null;
+  state = 'idle';
+}
+
+onSceneStop(abandonFlip);
 
 setOnCardClick(openCard);
