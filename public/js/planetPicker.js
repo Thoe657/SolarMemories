@@ -8,6 +8,10 @@ import { clearGalleryScene, loadPlanetMemories, showLoadingPlaceholders, setOnPo
 import { currentPlanet, planetsCache, setCurrentPlanet, setPlanetsCache } from './state.js';
 import { prefersReducedMotion } from './motionPreference.js';
 import { currentTier, tierSettings, onTierChange } from './quality.js';
+/* Imported as `themeLabel` rather than `label`, here and in scene.js: both
+   files already use `label` for DOM/texture-caption locals, and a themed
+   string silently shadowed by a <span> would be a very quiet bug. */
+import { label as themeLabel } from './theme.js';
 
 /* ============================================================
    PLANET PICKER — twinkling background stars
@@ -339,7 +343,7 @@ createPlanetBtn.addEventListener('click', async () => {
     createPlanetBtn.disabled = true;
   } catch (e) {
     console.warn('Could not create planet', e);
-    showStorageWarning('couldn\'t create that planet — check the gallery server and try again.');
+    showStorageWarning(`couldn't create that ${themeLabel('planet')} — check the gallery server and try again.`);
     createPlanetBtn.disabled = false;
   }
 });
@@ -439,7 +443,7 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
     body.style.display = 'flex';
     body.style.alignItems = 'center';
     body.style.justifyContent = 'center';
-    label.textContent = 'new planet';
+    label.textContent = themeLabel('newPlanet');
 
     planet.appendChild(body);
     planet.appendChild(label);
@@ -732,7 +736,7 @@ confirmDeletePlanetBtn.addEventListener('click', async () => {
     deletePlanetBtn.style.display = '';
   } catch (e) {
     console.warn('Could not delete planet', e);
-    showStorageWarning('couldn\'t delete that planet — check the gallery server and try again.');
+    showStorageWarning(`couldn't delete that ${themeLabel('planet')} — check the gallery server and try again.`);
     confirmDeletePlanetBtn.disabled = false;
     cancelDeletePlanetBtn.disabled = false;
   }

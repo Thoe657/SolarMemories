@@ -286,9 +286,18 @@ export function formatDate(dateStr) {
    actual world hanging far off in the distance rather than a marker
    on the ring. Two textures make one up: an equirectangular surface
    wrapped on a sphere, and a flat caption plate that floats above it.
-   A "next moon" that doesn't exist yet (the active one still has
+   A next moon that doesn't exist yet (the active one still has
    room) gets the greyed-out surface and a padlock on its plate, so
    the sky reads as continuing rather than simply ending.
+
+   NO THEMED COPY IS WRITTEN IN THIS FILE (Plan 4 Phase 2). Every word
+   that ends up on a plate arrives as a parameter, already resolved by
+   scene.js against theme.js — "next moon" in solar, "next nebula" in
+   universe, over a moon name or a derived nebula name. This module draws
+   whatever it is handed, and deliberately caches none of it: each call
+   bakes a fresh canvas, so a plate can never come back wearing the other
+   theme's wording. Keep it that way — a literal added here would be a
+   solar string the skin has no way to reach.
 ============================================================ */
 const LOCKED_TINT = [141, 131, 151];
 
@@ -355,8 +364,10 @@ export function makeMoonSurfaceTexture({ color = '#ffd9a0', locked = false }) {
   return tex;
 }
 
-// The caption plate floating above a portal moon: "next moon" over the
-// moon's name, or a padlock over "not formed yet" when it's locked.
+// The caption plate floating beside a portal moon: `caption` over `label` —
+// e.g. "next moon" over "Europa", or "next nebula" over "Orion" — or a padlock
+// over "not formed yet" when it's locked. Both strings come in themed; see the
+// section header above.
 export function makePortalLabelTexture({ caption, label, locked }) {
   const W = 512, H = 256;
   const canvas = document.createElement('canvas');

@@ -31,6 +31,9 @@ import {
   recordMeasuredTier,
   onTierChange
 } from './quality.js';
+// `label` is aliased because this file already uses that word for the portals'
+// caption-plate meshes and for the string drawn on them.
+import { label as themeLabel, groupingName } from './theme.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -1250,19 +1253,31 @@ function updatePortals() {
   const prev = earlier[earlier.length - 1];
   const next = currentMoons.find((p) => p.index > currentMoonIndex);
 
+  /* Both halves of a portal's plate are themed (Plan 4 Phase 2): the caption
+     is a themed string, and the name under it is groupingName() — the moon's
+     own stored name in solar, a nebula derived from its `index` in universe.
+     Nothing is stored either way; `moon.name` on disk is untouched.
+
+     These strings are passed straight into makePortalLabelTexture, which
+     bakes a fresh canvas every call and caches nothing, so the plate cannot
+     come back carrying the other theme's wording. The theme is also fixed for
+     the life of the page (theme.js's "fixed at load"), so a plate rebuilt on
+     a later moon jump is rebuilt against the same theme as the first one. */
   portals.prev.group.visible = !!prev;
   if (prev) {
     portals.prev.targetIndex = prev.index;
     setPortalAppearance(portals.prev, {
-      caption: 'previous moon', label: prev.name, locked: false
+      caption: themeLabel('previousMoon'), label: groupingName(prev.index, prev.name), locked: false
     });
   }
 
   portals.next.group.visible = true;
   portals.next.targetIndex = next ? next.index : null;
+  // "not formed yet" is not themed: a grouping that doesn't exist yet hasn't
+  // formed in either vocabulary, so it stays one literal.
   setPortalAppearance(portals.next, next
-    ? { caption: 'next moon', label: next.name, locked: false }
-    : { caption: 'next moon', label: 'not formed yet', locked: true });
+    ? { caption: themeLabel('nextMoon'), label: groupingName(next.index, next.name), locked: false }
+    : { caption: themeLabel('nextMoon'), label: 'not formed yet', locked: true });
 }
 
 // Small "you're here" readout in the topbar — without it the portals tell you
@@ -1277,7 +1292,10 @@ function updateMoonLabel() {
     el.classList.add('hidden');
     return;
   }
-  el.textContent = `✦ ${currentMoons[pos].name} · moon ${pos + 1} of ${currentMoons.length}`;
+  // Themed the same way the portal plates are, and from the same pair of
+  // inputs, so the readout and the portal you just came through agree.
+  const viewed = currentMoons[pos];
+  el.textContent = `✦ ${groupingName(viewed.index, viewed.name)} · ${themeLabel('moon')} ${pos + 1} of ${currentMoons.length}`;
   el.classList.remove('hidden');
 }
 
