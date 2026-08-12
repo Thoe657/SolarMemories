@@ -1,16 +1,47 @@
   @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Quicksand:wght@400;500;600&display=swap');
 
+  /* Theme-independent tokens. The *world* is near-black in both themes —
+     the sky doesn't get darker — so the backdrop, the warm lights and the
+     translucent UI chrome stay here. Plan 4 Phase 5 splits any of these
+     that the universe theme turns out to genuinely need. */
   :root {
     --bg-top: #000000;
     --bg-bottom: #050507;
     --light-warm: #ffd9a0;
     --light-glow: #ffeec2;
+    --ui-bg: rgba(30, 18, 45, 0.55);
+    --ui-border: rgba(255, 217, 160, 0.25);
+  }
+
+  /* ---------- Themed content-surface tokens (Plan 4 Phase 1) ----------
+     What actually changes between the two themes is the *content*
+     surfaces — the polaroid face, the read/flip panel, the forms:
+     warm cream on near-black in `solar`, cool graphite on near-black in
+     `universe`. `data-theme` is set on <html> by the inline bootstrap in
+     index.html before first paint; the :not([data-theme]) fallback below
+     keeps the tokens defined even if that script never ran, so a missing
+     attribute degrades to the default theme rather than to no colours.
+
+     These four values are duplicated in js/theme.js's registry, because
+     cards.js draws to a canvas where custom properties don't reach. The
+     two must be kept in step — change one, change the other.
+
+     The universe block is byte-identical for now, on purpose: Phase 1's
+     acceptance test is "nothing looks different in either theme". Phase 5
+     gives it its real values. */
+  :root[data-theme="solar"],
+  :root:not([data-theme]) {
     --card-bg: #fffaf0;
     --card-text: #4a3b2a;
     --accent: #f2a6b0;
     --accent-deep: #d6798a;
-    --ui-bg: rgba(30, 18, 45, 0.55);
-    --ui-border: rgba(255, 217, 160, 0.25);
+  }
+
+  :root[data-theme="universe"] {
+    --card-bg: #fffaf0;
+    --card-text: #4a3b2a;
+    --accent: #f2a6b0;
+    --accent-deep: #d6798a;
   }
 
   * { box-sizing: border-box; }
@@ -956,6 +987,17 @@
     gap: 28px;
     text-align: center;
     padding: 24px;
+    /* #entryScreen centres this with align-items, and a centred flex item
+       taller than its container overflows in *both* directions — the top of
+       it goes off-screen with no way to reach it, which on this screen would
+       mean the enter button. Not hypothetical since Plan 4 Phase 1 added a
+       second settings row (~140px) to a stack that was already ~300px tall:
+       a short landscape phone runs out of room. touch-action is set because
+       body sets `none` for the 3D scene's drag controls, and that would
+       otherwise disable the scroll this just enabled. */
+    max-height: 100%;
+    overflow-y: auto;
+    touch-action: pan-y;
   }
 
   .entry-title {
@@ -976,28 +1018,44 @@
     padding: 12px 36px;
   }
 
-  /* Quality tier selector (Plan 3 Phase 4). Deliberately not built out of
-     .btn: those are the app's *actions* (they stretch with flex: 1 and carry
-     the accent fill), and this is a setting that should sit quietly under the
-     enter button rather than compete with it. The palette, the radius and the
-     two typefaces are the same ones the rest of the app uses — Caveat for the
-     handwritten label, Quicksand for the options — so it reads as part of the
-     same screen. */
-  .entry-quality {
+  /* Entry-screen settings (Plan 3 Phase 4's quality selector; Plan 4 Phase 1's
+     theme selector above it). Deliberately not built out of .btn: those are the
+     app's *actions* (they stretch with flex: 1 and carry the accent fill), and
+     these are settings that should sit quietly under the enter button rather
+     than compete with it. The palette, the radius and the two typefaces are the
+     same ones the rest of the app uses — Caveat for the handwritten labels,
+     Quicksand for the options — so they read as part of the same screen.
+
+     The wrapper exists so the two rows group as one block: .entry-content's own
+     28px gap is the spacing between *sections* of the entry screen, which is
+     too much between two settings that belong together. The -6px that used to
+     pull the lone quality row up under the button now sits here and does the
+     same job for the pair. */
+  .entry-settings {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    margin-top: -6px;
+  }
+
+  .entry-quality,
+  .entry-theme {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    margin-top: -6px;
   }
 
-  .entry-quality-label {
+  .entry-quality-label,
+  .entry-theme-label {
     font-family: 'Caveat', cursive;
     font-size: 21px;
     color: rgba(255, 240, 220, 0.72);
   }
 
-  .entry-quality-options {
+  .entry-quality-options,
+  .entry-theme-options {
     display: flex;
     gap: 4px;
     padding: 4px;
@@ -1006,7 +1064,8 @@
     border: 1px solid var(--ui-border);
   }
 
-  .quality-chip {
+  .quality-chip,
+  .theme-chip {
     background: transparent;
     border: none;
     border-radius: 999px;
@@ -1020,17 +1079,20 @@
     transition: color 0.15s, background 0.15s;
   }
 
-  .quality-chip:hover { color: var(--light-glow); }
+  .quality-chip:hover,
+  .theme-chip:hover { color: var(--light-glow); }
 
-  .quality-chip[aria-checked="true"] {
+  .quality-chip[aria-checked="true"],
+  .theme-chip[aria-checked="true"] {
     background: rgba(255, 217, 160, 0.16);
     color: var(--light-glow);
     box-shadow: inset 0 0 0 1px var(--ui-border);
   }
 
   /* Reserves its line whether or not there's anything to say, so choosing a
-     tier doesn't shove the enter button up the screen. */
-  .entry-quality-note {
+     tier or a theme doesn't shove the enter button up the screen. */
+  .entry-quality-note,
+  .entry-theme-note {
     font-size: 12px;
     font-weight: 400;
     color: rgba(255, 240, 220, 0.45);

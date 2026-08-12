@@ -1,6 +1,16 @@
 /* ============================================================
    MAIN — startup and wiring between modules
 ============================================================ */
+/* theme.js FIRST, and not by accident. ES modules are evaluated
+   depth-first in import order, so listing it here means its body — the
+   ?theme= read, the localStorage read, and the data-theme re-assert — has
+   finished before any other module's body starts. That is the same
+   ordering lesson quality.js records: a module everything else reads from
+   has to resolve before anything reads it. scene.js builds its sky and
+   cards.js bakes its textures against the theme, and neither can be
+   re-decided afterwards. (theme.js is also imported directly by the
+   modules that use it — this line is about *when*, not about access.) */
+import './theme.js';
 import { tryRestoreStorage, loadPlanets, createBackupRemote, listBackupsRemote, restoreBackupRemote } from './api.js';
 import { showStorageWarning, showToast, updateStorageStatusUI } from './util.js';
 import { renderSolarSystem } from './planetPicker.js';

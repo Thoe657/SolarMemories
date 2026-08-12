@@ -15,6 +15,13 @@ import {
   tierSource,
   userChoice
 } from './quality.js';
+import {
+  chosenTheme,
+  currentTheme,
+  setTheme,
+  themeConfig,
+  themeSource
+} from './theme.js';
 
 const entryScreen = document.getElementById('entryScreen');
 const canvas = document.getElementById('entryScreenCanvas');
@@ -110,11 +117,63 @@ function enter() {
 enterBtn.addEventListener('click', enter);
 
 /* ============================================================
+   THEME SELECTOR (Plan 4 Phase 1)
+
+   Sits above the quality selector, deliberately: the theme is the choice
+   someone actually wants to make, and picture quality is a fallback for
+   when the app runs badly.
+
+   Unlike the quality selector, *nothing* here applies on the spot. The
+   theme is fixed at load by design (Plan 4 decision 5) — the sky texture,
+   the card textures and the portal geometry were all decided against it
+   before this screen was interactive. So the chip shows what you have
+   chosen, theme.js persists it, and the note says plainly that it lands
+   next time. That is the same honesty the quality note owes for antialias,
+   just for the whole theme rather than one setting.
+============================================================ */
+const themeOptions = document.getElementById('entryThemeOptions');
+const themeNote = document.getElementById('entryThemeNote');
+
+function themeNoteText() {
+  // ?theme= outranks the stored preference (see theme.js's precedence
+  // chain), and it wins again on every reload of that same URL — so it is
+  // reported whether or not a chip has since been clicked. Silently
+  // ignoring a click is worse than explaining it.
+  if (themeSource() === 'forced') {
+    return `held at ${themeConfig().chipLabel} by ?theme= in the address bar`;
+  }
+  if (chosenTheme() !== currentTheme()) return 'opens in this theme next time';
+  return '';  // the chip already says which theme; nothing to add
+}
+
+function renderThemeSelector() {
+  const chosen = chosenTheme();
+  themeOptions.querySelectorAll('.theme-chip').forEach((chip) => {
+    chip.setAttribute('aria-checked', String(chip.dataset.theme === chosen));
+  });
+  themeNote.textContent = themeNoteText();
+}
+
+// Guarded for the same reason the quality selector below is: this module's
+// body runs during startup, and a stale cached index.html without the
+// markup must not take the app's start down with it.
+if (themeOptions && themeNote) {
+  themeOptions.addEventListener('click', (e) => {
+    const chip = e.target.closest('.theme-chip');
+    if (!chip) return;
+    setTheme(chip.dataset.theme);
+    renderThemeSelector();
+  });
+
+  renderThemeSelector();
+}
+
+/* ============================================================
    QUALITY TIER SELECTOR (Plan 3 Phase 4)
 
    Lives here because the entry screen is the app's "before you go in"
    surface — the one place a setting can be changed before any of it is
-   on screen, and where PLAN_NEXT.md's theme toggle is slated to land too.
+   on screen, and where Plan 4's theme toggle landed too (above).
 
    The choice goes to quality.js, which persists it and notifies scene.js;
    everything the tier controls except one thing is applied on the spot.

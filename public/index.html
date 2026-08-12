@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Maddi's Memories</title>
 <link rel="icon" type="image/x-icon" href="/maddi_sun.ico" />
+<!-- THE ONE INLINE SCRIPT (Plan 4 Phase 1). This file is markup-only by
+     convention and everything else lives in public/js/ — this is the single
+     justified exception, for one reason: `data-theme` has to be on <html>
+     *before first paint*. A module import cannot do that. Modules are
+     deferred by definition, so js/main.js runs after the document has been
+     parsed and painted, and the app would show a frame of the default theme's
+     cream surfaces before going dark — a flash on every single load, which is
+     exactly the kind of thing a theme system is supposed to prevent. Placed
+     above the stylesheet so the attribute exists before any CSS is applied.
+     Kept to one line, doing nothing but reading and setting: the precedence
+     (?theme= > stored > solar), the key name and the valid values are all
+     mirrored from js/theme.js, which re-asserts the same attribute on load
+     and is the authority if the two ever drift. Wrapped because localStorage
+     throws outright when site data is disabled, and a theme must never be
+     what stops the app from starting. -->
+<script>try{var t=new URLSearchParams(location.search).get('theme');if(t!=='solar'&&t!=='universe')t=localStorage.getItem('solarMemories.theme');document.documentElement.dataset.theme=(t==='solar'||t==='universe')?t:'solar';}catch(e){document.documentElement.dataset.theme='solar';}</script>
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -16,18 +32,36 @@
     <div class="entry-actions">
       <button class="btn btn-primary" id="entryEnterBtn">enter</button>
     </div>
-    <!-- Quality tier selector (Plan 3 Phase 4). The entry screen is the
-         "before you go in" surface, and a tier chosen here is persisted so
-         the next load can act on it before the renderer exists. -->
-    <div class="entry-quality" id="entryQuality">
-      <div class="entry-quality-label">picture quality</div>
-      <div class="entry-quality-options" id="entryQualityOptions" role="radiogroup" aria-label="picture quality">
-        <button type="button" class="quality-chip" role="radio" aria-checked="true" data-quality="auto">auto</button>
-        <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="high">high</button>
-        <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="medium">medium</button>
-        <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="low">low</button>
+    <!-- The two "before you go in" settings, in one container. Both are
+         persisted and both are read at the *next* load, before the renderer
+         or the sky exist — which is what makes the entry screen the only
+         honest place to put them. Theme first: the theme is the choice
+         someone actually wants to make, and picture quality is a fallback
+         for when the app runs badly. -->
+    <div class="entry-settings" id="entrySettings">
+      <!-- Theme selector (Plan 4 Phase 1). -->
+      <div class="entry-theme" id="entryTheme">
+        <div class="entry-theme-label">theme</div>
+        <div class="entry-theme-options" id="entryThemeOptions" role="radiogroup" aria-label="theme">
+          <button type="button" class="theme-chip" role="radio" aria-checked="true" data-theme="solar">solar system</button>
+          <button type="button" class="theme-chip" role="radio" aria-checked="false" data-theme="universe">universe</button>
+        </div>
+        <div class="entry-theme-note" id="entryThemeNote"></div>
       </div>
-      <div class="entry-quality-note" id="entryQualityNote"></div>
+
+      <!-- Quality tier selector (Plan 3 Phase 4). A tier chosen here is
+           persisted so the next load can act on it before the renderer
+           exists. -->
+      <div class="entry-quality" id="entryQuality">
+        <div class="entry-quality-label">picture quality</div>
+        <div class="entry-quality-options" id="entryQualityOptions" role="radiogroup" aria-label="picture quality">
+          <button type="button" class="quality-chip" role="radio" aria-checked="true" data-quality="auto">auto</button>
+          <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="high">high</button>
+          <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="medium">medium</button>
+          <button type="button" class="quality-chip" role="radio" aria-checked="false" data-quality="low">low</button>
+        </div>
+        <div class="entry-quality-note" id="entryQualityNote"></div>
+      </div>
     </div>
   </div>
 </div>
