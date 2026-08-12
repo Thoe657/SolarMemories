@@ -15,11 +15,20 @@ import { tierSettings } from './quality.js';
    note further down describes for strings.
 
    The portal section at the bottom of this file still holds its own warm
-   literals. That is not an oversight: Phase 7 replaces the portal's geometry
-   outright (an unlit black-hole billboard in universe), so retinting the
-   sphere-and-plate drawing here would be tinting something about to be
-   replaced. The one thing it does take from the theme already is the planet's
-   accent — see makeMoonSurfaceTexture.
+   literals, and Phase 7 has now landed without removing them. That is still
+   deliberate, but the reason has changed and is worth stating plainly rather
+   than leaving the old one to rot:
+
+   - makeMoonSurfaceTexture and makeBlackHoleTexture both take the planet's
+     accent through themedAccent(), so the two geometries are already themed
+     where it matters. Neither is drawn in the other theme —
+     makeMoonSurfaceTexture is solar-only from Phase 7 on, and the black hole
+     universe-only — so their remaining literals are per-theme by construction.
+   - makePortalLabelTexture is the exception: it is the ONE portal drawing
+     shared by both themes, and its warm ink and padlock grey are still
+     literals. They read acceptably on graphite, so retinting them was not
+     worth spending this phase's budget on. If a later phase touches the plate
+     anyway, that is the thing to fix — not another deferral.
 
    The theme is fixed at load (theme.js's opening note), so these are read at
    draw time and never change under a live texture; that is also why Plan 4
@@ -403,6 +412,97 @@ export function makeMoonSurfaceTexture({ color = '#ffd9a0', locked = false }) {
   // away from the view at the limb, which is precisely the grazing angle
   // anisotropic filtering exists for.
   tex.anisotropy = 4;
+  return tex;
+}
+
+/* The universe theme's portal: a black hole with an accretion ring, drawn
+   face-on for a flat quad rather than wrapped on a sphere. Square (1:1), and
+   transparent outside the glow — the disc's silhouette is the texture's opaque
+   region, the same trick the milestone star card uses.
+
+   Draw order is the whole effect. The far side of the accretion disc is laid
+   down first, then the event horizon over it, then the near side over that —
+   so the ring passes behind the hole at the top and in front at the bottom,
+   which is what makes it read as a disc seen at an angle rather than a
+   flat halo. The ellipse's 0.34 squash is that viewing angle.
+
+   A locked portal gets the horizon and its glow and NO ring at all. The plan's
+   reasoning: the ring is what marks a real one, so its absence says "not
+   formed yet" — a better sentence than "greyed out". */
+export function makeBlackHoleTexture({ color = '#ffd9a0', locked = false }) {
+  const S = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = S; canvas.height = S;
+  const ctx = canvas.getContext('2d');
+  const cx = S / 2, cy = S / 2;
+
+  // Same accent path as the moon surface: re-aimed at render time, never stored.
+  const [r, g, b] = locked ? LOCKED_TINT : hexToRgb(themedAccent(color));
+  const tint = (t, a = 1) => `rgba(${Math.min(255, Math.round(r * t))}, ${Math.min(255, Math.round(g * t))}, ${Math.min(255, Math.round(b * t))}, ${a})`;
+
+  const HORIZON = 84;
+  const RING_RX = 232, RING_RY = 232 * 0.34;
+  const RING_INNER = 0.52; // fraction of RING_RX where the ring starts
+
+  // Outer bloom, so the hole sits in something rather than being cut out of
+  // the sky. Faint and wide; the sky behind it is near-black in both themes.
+  const bloom = ctx.createRadialGradient(cx, cy, HORIZON * 0.8, cx, cy, S / 2);
+  bloom.addColorStop(0, tint(1, locked ? 0.10 : 0.22));
+  bloom.addColorStop(0.45, tint(0.8, locked ? 0.04 : 0.09));
+  bloom.addColorStop(1, tint(0.6, 0));
+  ctx.fillStyle = bloom;
+  ctx.fillRect(0, 0, S, S);
+
+  // One half of the accretion ring. `half` is -1 for the far side (drawn
+  // before the horizon) and +1 for the near side (drawn after it).
+  const drawRingHalf = (half) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, half < 0 ? 0 : cy, S, cy);
+    ctx.clip();
+    ctx.translate(cx, cy);
+    ctx.scale(1, RING_RY / RING_RX);
+    const grad = ctx.createRadialGradient(0, 0, RING_RX * RING_INNER, 0, 0, RING_RX);
+    grad.addColorStop(0, tint(1.35, 0));
+    grad.addColorStop(0.12, tint(1.5, 0.95));
+    grad.addColorStop(0.3, tint(1.15, 0.7));
+    grad.addColorStop(0.7, tint(0.9, 0.28));
+    grad.addColorStop(1, tint(0.7, 0));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, RING_RX, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  if (!locked) drawRingHalf(-1);
+
+  // The event horizon: genuinely black, not "dark accent". It is the one
+  // thing on screen that should give back no light at all.
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.arc(cx, cy, HORIZON, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Photon ring hugging the horizon. Present when locked too, at a fraction of
+  // the strength — without it the locked disc has no edge and stops reading as
+  // an object at all, which is the same failure the locked moon's 0.72 opacity
+  // was fixing.
+  ctx.strokeStyle = tint(1.5, locked ? 0.34 : 0.9);
+  ctx.lineWidth = locked ? 2.5 : 4;
+  ctx.beginPath();
+  ctx.arc(cx, cy, HORIZON + 2, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (!locked) drawRingHalf(1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  /* No anisotropy, for the caption plate's reason rather than the moon
+     surface's: this is a flat quad facing the viewer, so the sample footprint
+     never goes grazing. Mipmaps stay — 512px landing on roughly 170 device
+     pixels is a real minification, and the disc swings past as you look
+     around. */
   return tex;
 }
 

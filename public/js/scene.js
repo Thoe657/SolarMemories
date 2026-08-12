@@ -5,6 +5,7 @@
 import {
   makePolaroidTexture,
   makeMoonSurfaceTexture,
+  makeBlackHoleTexture,
   makePortalLabelTexture,
   makeCardCanvas,
   cardTextureSize,
@@ -33,7 +34,7 @@ import {
 } from './quality.js';
 // `label` is aliased because this file already uses that word for the portals'
 // caption-plate meshes and for the string drawn on them.
-import { label as themeLabel, groupingName, themeConfig, currentTheme, DEFAULT_THEME } from './theme.js';
+import { label as themeLabel, groupingName, themeConfig, themeFlag, currentTheme, DEFAULT_THEME } from './theme.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -1256,16 +1257,24 @@ function starsOnViewedMoon(all, moons, moonIndex) {
 const portalGroup = new THREE.Group();
 scene.add(portalGroup);
 
-// Nothing else in the scene reacts to lights — cards, fairy lights and the
-// background sky are all MeshBasicMaterial — so this only shapes the portal
-// moons, which are the one lit surface here.
-//
-// It sits above the middle of the ring, i.e. above the viewer, because both
-// portals hang off to the sides: lighting from there catches the hemisphere
-// each one turns toward you, with the terminator falling just below centre.
-// A directional light aimed from one side left whichever moon faced away
-// from it as a near-black disc. decay 0 keeps it from falling off over the
-// 26 units out to the portals.
+/* SOLAR ONLY, from Plan 4 Phase 7 on. Nothing else in the scene reacts to
+   lights — cards, fairy lights and the background sky are all
+   MeshBasicMaterial — so this only shapes the portal moons, which are the one
+   lit surface here. In `universe` the portals are unlit black-hole billboards
+   and this light (along with the AmbientLight and HemisphereLight above)
+   illuminates nothing at all. It is still constructed in both themes: it costs
+   one uniform on a scene that has no lit material to apply it to, and making
+   the light rig conditional would put a second, subtler theme branch on the
+   renderer's setup for no measurable gain.
+
+   It sits above the middle of the ring, i.e. above the viewer, because both
+   portals hang off to the sides: lighting from there catches the hemisphere
+   each one turns toward you, with the terminator falling just below centre.
+   A directional light aimed from one side left whichever moon faced away
+   from it as a near-black disc. decay 0 keeps it from falling off over the
+   26 units out to the portals. That black-disc constraint is what makes this
+   a PointLight rather than a DirectionalLight, and it now applies to `solar`
+   alone — a billboard has no unlit hemisphere to leave in shadow. */
 const portalSun = new THREE.PointLight(0xfff2dd, 2.4, 0, 0);
 portalSun.position.set(0, 14, 0);
 scene.add(portalSun);
@@ -1282,6 +1291,22 @@ const PORTAL_ELEVATION = (20.5 * Math.PI) / 180;
 const PORTAL_BODY_RADIUS = 2.7;                    // ~11° across: a big distant world
 const PORTAL_ANGLES = { prev: -Math.PI * (100 / 180), next: Math.PI * (100 / 180) };
 
+/* Plan 4 Phase 7. In `universe` the portal stops being a lit sphere and
+   becomes an unlit disc: a black hole is genuinely disc-shaped, so a flat quad
+   is the honest geometry here rather than a shortcut, where a sphere wearing a
+   black-hole costume would just look like a planet in a costume.
+
+   "Billboard" here means the same static facing the caption plate has always
+   used, not a per-frame lookAt. The camera never translates — it is set once
+   at (0, 1.2, 0) and only ever rotates — so facing the viewer is a fixed
+   orientation, and the group's existing `rotation.y = angle + Math.PI` already
+   provides it. The disc hangs ~9.7 units above eye level at 26 out, so it is
+   seen about 20.5° off head-on and foreshortens by cos(20.5°) ≈ 6%. That is
+   left uncorrected on purpose: it is the same ~7% the caption plate already
+   accepts, and a 6% squash on an accretion disc reads as the disc being
+   tilted, which is what one looks like anyway. */
+const BLACK_HOLE_PORTALS = themeFlag('blackHolePortals');
+
 function makePortalObject(kind) {
   const group = new THREE.Group();
   const angle = PORTAL_ANGLES[kind];
@@ -1294,21 +1319,36 @@ function makePortalObject(kind) {
   group.visible = false;
   portalGroup.add(group);
 
-  const body = new THREE.Mesh(
-    new THREE.SphereGeometry(PORTAL_BODY_RADIUS, 48, 32),
-    new THREE.MeshLambertMaterial({ transparent: true })
-  );
+  /* Branched at construction, not built-then-replaced: these two objects are
+     made exactly once for the life of the page (moon changes only swap maps),
+     so there is no teardown path to lean on and nothing should be allocated
+     that the active theme will never draw. */
+  const body = BLACK_HOLE_PORTALS
+    ? new THREE.Mesh(
+      // Square: makeBlackHoleTexture is 1:1 and the disc must not be ovalled
+      // by its own quad. Sized off the same radius the sphere used, with room
+      // around it for the accretion ring and bloom, which live inside the
+      // texture rather than in extra geometry.
+      new THREE.PlaneGeometry(PORTAL_BODY_RADIUS * 2.6, PORTAL_BODY_RADIUS * 2.6),
+      new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
+    )
+    : new THREE.Mesh(
+      new THREE.SphereGeometry(PORTAL_BODY_RADIUS, 48, 32),
+      new THREE.MeshLambertMaterial({ transparent: true })
+    );
   body.userData.portal = kind;
   group.add(body);
 
-  // thin shell of atmosphere, seen edge-on around the limb
-  const halo = new THREE.Mesh(
+  // thin shell of atmosphere, seen edge-on around the limb. Solar only — the
+  // black hole's glow is painted into its texture, and a BackSide sphere
+  // around a flat disc would just be a bubble with nothing in it.
+  const halo = BLACK_HOLE_PORTALS ? null : new THREE.Mesh(
     new THREE.SphereGeometry(PORTAL_BODY_RADIUS * 1.14, 32, 24),
     new THREE.MeshBasicMaterial({
       side: THREE.BackSide, transparent: true, opacity: 0.2, depthWrite: false
     })
   );
-  group.add(halo);
+  if (halo) group.add(halo);
 
   const labelWidth = PORTAL_BODY_RADIUS * 2.2;
   const label = new THREE.Mesh(
@@ -1322,13 +1362,24 @@ function makePortalObject(kind) {
   // the caption off-screen, below put it behind the ring. Sideways is free.
   // Local +x runs toward *decreasing* azimuth once the group is turned to face
   // the viewer, so the sign here keeps both captions on their inward side.
-  label.position.x = (kind === 'next' ? 1 : -1) * (PORTAL_BODY_RADIUS + labelWidth / 2 + 0.3);
+  // Clearing the body's actual half-width, which is not the same in the two
+  // themes: the sphere is PORTAL_BODY_RADIUS across its radius, the disc's quad
+  // is 1.3x that, because the ring and bloom are painted inside the texture.
+  // Measuring off the geometry rather than the constant keeps the same gap.
+  const bodyHalfWidth = BLACK_HOLE_PORTALS ? PORTAL_BODY_RADIUS * 1.3 : PORTAL_BODY_RADIUS;
+  label.position.x = (kind === 'next' ? 1 : -1) * (bodyHalfWidth + labelWidth / 2 + 0.3);
   label.userData.portal = kind;
   group.add(label);
 
   return {
     kind, group, body, halo, label,
     spin: kind === 'next' ? 0.012 : -0.009,
+    /* Which axis that spin turns. A sphere rotates on its own vertical axis;
+       a flat disc cannot — turning a quad about Y swings it edge-on and it
+       vanishes. Z is the view axis for a viewer-facing quad, so the accretion
+       ring turns in its own plane, which is the one rotation a black hole
+       actually shows you. */
+    spinAxis: BLACK_HOLE_PORTALS ? 'z' : 'y',
     locked: false,
     targetIndex: null,
     nudgeStart: 0
@@ -1340,11 +1391,20 @@ const portals = { prev: makePortalObject('prev'), next: makePortalObject('next')
 function setPortalAppearance(portal, { caption, label, locked }) {
   const color = currentPlanet?.accentColor || '#ffd9a0';
 
+  /* Same swap-and-dispose lifecycle in both themes, and deliberately NOT the
+     LRU: textureInUse() only scans cardGroup.children, and portals live under
+     portalGroup, so a portal texture in that cache could be disposed while
+     still bound to a live material. A fresh texture per call, the old one
+     dropped here, is what keeps that impossible. */
   const oldSurface = portal.body.material.map;
-  portal.body.material.map = makeMoonSurfaceTexture({ color, locked });
-  // A locked moon is a ghost of a world, but still has to read as one — at
-  // half opacity over a starfield it disappeared and left the caption floating.
-  portal.body.material.opacity = locked ? 0.72 : 1;
+  portal.body.material.map = BLACK_HOLE_PORTALS
+    ? makeBlackHoleTexture({ color, locked })
+    : makeMoonSurfaceTexture({ color, locked });
+  /* A locked moon is a ghost of a world, but still has to read as one — at
+     half opacity over a starfield it disappeared and left the caption
+     floating. The black hole needs no such fade: it says "not formed yet" by
+     having no accretion ring, so it stays fully opaque and keeps its edge. */
+  portal.body.material.opacity = (locked && !BLACK_HOLE_PORTALS) ? 0.72 : 1;
   portal.body.material.needsUpdate = true;
   oldSurface?.dispose();
 
@@ -1353,9 +1413,12 @@ function setPortalAppearance(portal, { caption, label, locked }) {
   portal.label.material.needsUpdate = true;
   oldLabel?.dispose();
 
-  // an unformed moon gets no atmosphere — it reads as a ghost of a world
-  portal.halo.visible = !locked;
-  portal.halo.material.color.set(color);
+  // an unformed moon gets no atmosphere — it reads as a ghost of a world.
+  // Null in universe, where the glow is painted into the disc's own texture.
+  if (portal.halo) {
+    portal.halo.visible = !locked;
+    portal.halo.material.color.set(color);
+  }
   portal.locked = locked;
 }
 
@@ -2034,7 +2097,9 @@ function animate(now = 0) {
   // swell when clicked, so the click reads as heard rather than ignored
   Object.values(portals).forEach((portal) => {
     if (!portal.group.visible) return;
-    portal.body.rotation.y += portal.spin * motionDamp;
+    // See spinAxis in makePortalObject: a sphere turns on its vertical axis, a
+    // viewer-facing disc turns in its own plane (Y would swing it edge-on).
+    portal.body.rotation[portal.spinAxis] += portal.spin * motionDamp;
 
     let swell = 1;
     if (portal.nudgeStart) {
