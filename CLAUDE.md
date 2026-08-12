@@ -121,7 +121,10 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
   keeping the most recent `BACKUP_KEEP_COUNT` (10); `server.js` triggers one on startup
   if the newest is stale or missing.
 - `routes/planets.js`, `routes/memories.js`, `routes/backup.js` — route handlers.
-  Memories routes: `GET /` (reads the index), `GET /trash`, `GET /:id` (full record),
+  Memories routes: `GET /` (reads the index, **slim by default** — no `photoData`/
+  `audioData`, plus `hasPhoto`/`hasAudio`; `?full=1` for the old shape), `GET /trash`
+  (slim the same way), `GET /:id` (full record; `?media=photo|audio` for just one
+  payload, which is what the ring's lazy photo fetch uses),
   `POST /` (also assigns the memory to the planet's newest moon, creating the next one
   past `MOON_STAR_CAP`; re-POSTing an existing id preserves its `moonId`, same as
   `createdAt`; responds `{ ok, moonId }` so the client can tell whether the new star
@@ -141,8 +144,13 @@ wrappers), `cards.js` (polaroid + card-back + moon-portal canvas textures),
 `scene.js` (Three.js renderer/camera/lights/background/animate loop, card meshes,
 moon portals, camera drag controls — exposes `setOnCardClick`/`setOnPortalClick`
 callbacks rather than importing the handling modules directly, to avoid circular
-imports; also owns the in-memory per-session texture cache and the adaptive-quality
-frame-time benchmark — see below), `planetPicker.js`
+imports; also owns the card-texture LRU, the frame-callback registry and the rolling
+frame-time sampling that asks `quality.js` to step the tier down — see below),
+`quality.js` (the quality tier: the tier table as data, precedence resolution, and
+`localStorage` persistence — imported by `scene.js` so it resolves first),
+`perfHud.js` (the `?perf=1` readout and `window.__perf()`; dynamically imported by
+`main.js` only when that param is present, so a normal load never fetches it),
+`planetPicker.js`
 (solar system rendering, hyperspace transition, new/edit-planet forms, starfield
 parallax + shooting stars), `memoryForm.js` (add-memory form, photo/audio
 compression), `entryScreen.js` (one-time nebula start screen, 2D canvas, gates the
@@ -288,18 +296,27 @@ against a testbed copy first and the real run happened only after that passed). 
 future rename ever collides two record types onto the same directory name again, migrate
 the data (or at least back it up) *before* pointing the renamed code at real `data/`.
 
-The separate checkout that works cleanly (used for Phases 4–5–8, real `data/` verified
-untouched afterwards each time): `git worktree add --detach <scratch>/testbed HEAD`, copy
-`data.test-fixture/` to `<scratch>/testbed/data`, junction `node_modules` in, and patch
-that copy's `src/config.js` `PORT` to something other than 3000 so it can run alongside
-the real app. `DATA_DIR` resolves from `src/config.js`'s own `__dirname`, so the testbed
-server reads and writes only its own `data/` regardless of cwd. **Junctioned
-`node_modules` gotcha, found during Phase 8**: `git worktree remove --force` can follow
-that junction and delete the *real* repo's `node_modules` contents, not just the
-worktree's copy — not `data/`, so not a personal-data hazard, but it breaks `npm start`
-until `npm install` is re-run. Unlink/remove the junction before running
-`git worktree remove`, or just re-run `npm install` afterward and verify `node_modules`
-before trusting the app boots.
+The separate checkout that works cleanly (used for Plan 2's Phases 4–5–8 and Plan 3's
+Phase 5, real `data/` verified untouched afterwards each time):
+`git worktree add --detach <scratch>/testbed HEAD`, copy `data.test-fixture/` to
+`<scratch>/testbed/data`, **copy** `node_modules` in, and patch that copy's
+`src/config.js` `PORT` to something other than 3000 so it can run alongside the real app.
+`DATA_DIR` resolves from `src/config.js`'s own `__dirname`, so the testbed server reads
+and writes only its own `data/` regardless of cwd. Tear down by removing the testbed's
+`node_modules` *first*, then `git worktree remove --force`, then `git worktree prune`.
+
+**Copy `node_modules`, don't junction it.** A junction is the tempting shortcut — it is
+instant and saves a few hundred MB — but during Plan 2's Phase 8 `git worktree remove
+--force` followed one and deleted the *real* repo's `node_modules` contents, not just the
+worktree's. Not `data/`, so not a personal-data hazard, but it breaks `npm start` until
+`npm install` is re-run. Copying takes a minute or two and has no such failure mode; Plan
+3's Phase 5 did it that way and the real `node_modules` was verified intact afterwards. If
+you do junction anyway, unlink it before `git worktree remove`, and re-run `npm install`
+and check `node_modules` before trusting the app boots.
+
+Also note `git worktree remove` fails with "Permission denied" while the testbed's server
+is still running — stop it first, and if the worktree registration is left behind,
+`rm -rf` the directory and `git worktree prune`.
 
 ## Development plan
 

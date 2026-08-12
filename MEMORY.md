@@ -1,5 +1,31 @@
 # Session log
 
+## 2026-08-12 — Plan 3 complete: performance & smoothness, low-end PCs first (phases 1-9)
+Completed: Implemented and committed all 9 phases of Plan 3 — perf HUD + `?perf=`/
+`?quality=`, pausing the render behind the entry screen/picker, fairy lights as two
+shader `Points` clouds, persistent quality tiers, slim `/api/memories` + lazy media,
+shared card geometry + LRU texture cache, lossless-WebP skies + vendored three.js, and
+compositing/transition/input work — then swept all three tiers and folded it into
+`PLAN_ARCHIVE.md`.
+Decisions: Four of the plan's own baseline findings were wrong when measured (fairy
+lights were never ~240 draw calls, Theo's 6.9MB is a photo not audio, the portal caption
+plate isn't drawn at 1:1, dropping sky alpha saves neither bytes nor VRAM) — corrected
+per phase in the archive rather than quietly dropped. User approved a `sharp`
+devDependency for lossless WebP and `npm install three@0.160.0` to vendor three.js.
+Open issues & next steps: Frame times here are throttle-bound (20ms/35ms against the
+60/30fps targets), so tiers are verified as *applied*, not as rescuing genuinely slow
+hardware — the machine this plan targeted is still untested; `prefers-reduced-motion`
+forcing low is verified by inspection only. `fonts.googleapis.com` is the last external
+host (offline load works but falls back to system type) — self-hosting is now filed in
+PLAN_NEXT.md; `docs/PLAN.md` is reset, and `docs/PLAN_4_UNIVERSE_THEME.md` is drafted
+but unscoped.
+Files touched: `public/js/` (new `perfHud.js`, `quality.js`; plus scene, cards, cardFlip,
+memoryForm, api, planetPicker, entryScreen, main), `public/css/styles.css`,
+`public/index.html`, new `public/lib/three.min.js` + `public/assets/backgrounds/*.webp`,
+`src/routes/memories.js`, `server.js`, `scripts/` (new `perf-report.js`,
+`build-backgrounds.js`), `package.json`, `CLAUDE.md`; `docs/` (gitignored).
+Commits: 84b521f..d1a05ec
+
 ## 2026-08-10 — Phases 6,7,8,9,10,12: plan complete, folded into archive, pushed
 Completed: Implemented and committed the plan's remaining phases via sequential
 subagents — Phase 6 (milestone star cards), 7 (memory editing), 8 (restore-from-backup
@@ -35,56 +61,24 @@ Rendered only the viewed planet's stars, verified 28/35 on a 2-planet test set; 
 flow not planet-aware) and its `DATA_DIR` lesson are both resolved/codified as of the
 2026-08-09 entry above and CLAUDE.md's Data safety section.
 
-## 2026-08-07 — Scoped PLAN_NEXT into PLAN.md (Phases 7-10), executed Phase 2 (planets data model)
-Completed: Scoped 4 items from docs/PLAN_NEXT.md (memory editing, restore-from-backup UI,
-touch controls, inline undo toast) into docs/PLAN.md as Phases 7-10; implemented and
-manually tested Phase 2 (`planets` record type, ~28-star grouping) end-to-end against live data.
-Decisions: Confirmed with user that re-POSTing an existing memory id (future edit, Phase
-7) preserves its `planetId` rather than reassigning it, mirroring the existing
-`createdAt`-preservation pattern, so upcoming planet navigation isn't destabilized by edits.
-Open issues & next steps: All Phase 2 code is uncommitted; ran `scripts/backfill-planets.js`
-for real against live data (backed up first) to stamp `planetId` onto 4 pre-existing
-memories. Phase 3 (frontend: restrict rendering to the viewed planet) is next and is
-flagged in PLAN.md as the highest-risk phase.
-Files touched: `server.js`, `src/config.js`, `src/lib/storage.js`, `src/lib/validate.js`,
-`src/routes/galaxies.js`, `src/routes/memories.js`, `src/lib/planetNames.js` (new),
-`scripts/backfill-planets.js` (new); `docs/PLAN.md`, `docs/PLAN_NEXT.md` (gitignored).
+## 2026-08-07 — Scoped PLAN_NEXT into PLAN.md (Phases 7-10), executed Phase 2 (planets data model) (archived — see docs/MEMORY.archive.md)
+Scoped memory editing, restore-from-backup UI, touch controls and the undo toast into
+PLAN.md as Phases 7-10, and built the `planets` record type with ~28-star grouping
+(`src/lib/planetNames.js`, `scripts/backfill-planets.js`). Its decision — a re-POST of an
+existing memory id preserves `planetId`/`moonId` like `createdAt` — is codified in
+CLAUDE.md's memories-routes description; all four scoped items shipped by 2026-08-10.
 
-## 2026-08-07 — Scoped "Galaxy scaling" plan (stars & planets), executed Phase 1 rename
-Completed: Scoped a 6-phase "Galaxy scaling — stars & planets" plan into docs/PLAN.md
-(groups a galaxy's memories into ~28-star "planets" to fix ring overlap + main-thread
-load cost), then executed and committed Phase 1 (rename memory cards to "stars").
-Decisions: Phase 1 surfaced a real naming collision — galaxyPicker.js already used
-"planet" for each galaxy's icon in the picker — resolved by keeping "planet" for the
-new star-grouping and renaming the picker icons to "world" instead (`addPlanet`→
-`addWorld`, `.planet`→`.world` CSS); also reorganized `docs/` into `docs/archive/` for
-superseded plan files and removed the stale `READ.txt`.
-Open issues & next steps: Phases 2-6 (planets data model, restrict-rendering fix,
-portal navigation, hyperspace escalation, milestone star shape) are unstarted; branch
-`galaxy-scaling-p1-rename-stars` is committed but not yet merged to `main`.
-Files touched: `CLAUDE.md`, `public/js/galaxyPicker.js`, `public/css/styles.css`,
-`READ.txt` (deleted); `docs/PLAN.md` (new), `docs/PLAN_NEXT.md`, `docs/PLAN_ARCHIVE.md`,
-`docs/archive/` (all gitignored, not in git diff).
-Commits: 4aa1f4d
+## 2026-08-07 — Scoped "Galaxy scaling" plan (stars & planets), executed Phase 1 rename (archived — see docs/MEMORY.archive.md)
+Scoped the 6-phase "Galaxy scaling" plan and renamed memory cards to "stars", working
+around a naming collision by calling the picker's icons "world" (`addWorld`, `.world`).
+That workaround was retired by Phase 11's galaxy→planet/planet→moon rename; the whole
+plan is now Plan 2 in `docs/archive/PLAN_ARCHIVE.md`.
 
-## 2026-08-06 — Executed PLAN.md phases 0–14 + doc wrap-up (plan now fully complete)
-Completed: Implemented all 15 phases of the original development plan (modular
-refactor; validation; per-record storage; archive-not-delete; backups; milestones;
-linked memories; card-flip read view; loading states; pinch-to-zoom disable; starfield
-parallax; ambient audio/quiet mode; texture caching; adaptive quality; baked
-backgrounds) — one branch per phase, merged to `main` after manual verification. Then
-consolidated `docs/PLAN.md` + `docs/PLAN_SUMMARY.md` into
-[docs/PLAN_ARCHIVE.md](docs/PLAN_ARCHIVE.md) (what each phase built, decisions, testing)
-and split future/unscoped ideas into [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md), to cut
-redundant re-tellings of the same completed work across three docs.
-Gotchas for next time: `pkill -f "node server.js"` doesn't reliably kill the Windows
-`node.exe` process here — use `taskkill //F //IM node.exe` instead (once masked a code
-change during Phase 1 testing). The in-app preview browser pane reported
-`document.hidden: true` throughout phases 11–14 testing, stalling all
-`requestAnimationFrame` work (hyperspace transition, main animate loop) — worked around
-by calling exported functions directly and via dynamic `import()` from the browser
-console; root cause not investigated.
-Open issues & next steps: None queued from the original plan. Follow-on ideas
-(including memory editing, which needs Phase 12's texture cache to gain invalidation
-logic first) are tracked unscoped in [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md).
-Commits: 6a6f51b..0589fed
+## 2026-08-06 — Executed PLAN.md phases 0–14 + doc wrap-up (plan now fully complete) (archived — see docs/MEMORY.archive.md)
+Built the original 15-phase plan (modular refactor, validation, per-record storage,
+archive-not-delete, backups, texture caching, adaptive quality, baked backgrounds) and
+consolidated the docs into PLAN_ARCHIVE.md + PLAN_NEXT.md; it is now Plan 1 in the
+archive. Two gotchas it recorded are still live and not codified elsewhere: `pkill -f
+"node server.js"` doesn't kill the Windows `node.exe` here — use `taskkill //F //IM
+node.exe`; and the in-app browser pane stalls `requestAnimationFrame`, which has now
+recurred across all three plans.
