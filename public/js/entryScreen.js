@@ -57,13 +57,54 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// A few slow-drifting nebula cloud blobs, reusing the layered
-// radial-gradient technique from scene.js's paintGlow.
-const blobs = [
-  { baseX: 0.3, baseY: 0.35, r: 0.55, color: 'rgba(80,60,120,ALPHA)', alpha: 0.5, speed: 0.02, phase: 0 },
-  { baseX: 0.72, baseY: 0.4, r: 0.5, color: 'rgba(110,70,90,ALPHA)', alpha: 0.4, speed: 0.015, phase: 2 },
-  { baseX: 0.5, baseY: 0.7, r: 0.6, color: 'rgba(60,50,100,ALPHA)', alpha: 0.45, speed: 0.018, phase: 4 },
-];
+/* Nebula cloud blobs, reusing the layered radial-gradient technique from
+   scene.js's paintGlow. Plan 4 Phase 4 gives each theme its own set — more
+   of them, and coloured rather than three near-neutral violets.
+
+   THE RICHNESS IS IN THE ARRANGEMENT, NOT IN THE MOTION, and that is a hard
+   constraint rather than a preference: Plan 3 Phase 2 took this canvas to
+   quarter resolution at ~10fps precisely because it was the app's first
+   impression on the slowest machine it will ever run on. Neither
+   RESOLUTION_SCALE nor DRAW_INTERVAL_MS moves here.
+
+   So the three original blobs are kept exactly as they were, drift and all,
+   and everything added is a SMALL ACCENT AT speed: 0 — a fixed composition
+   element, not a fourth thing to animate. The added radii are 0.16–0.28
+   against the originals' 0.5–0.6, so the extra fill area is a fraction of
+   one canvas rather than a multiple of it; at 316×176 (a 1280-wide window)
+   the four solar accents come to roughly one canvas's worth of pixels per
+   frame, ten times a second.
+
+   Solar gains warmth (amber, rose, a pale core) where universe goes cool and
+   banded (deep blue, teal, violet, a bright cyan core) — the palette
+   temperature lever from the plan's stranger test. Alphas stay at or below
+   the originals' 0.5 over black, which is what keeps this screen under the
+   plan-wide "the sky never out-shouts the cards" ceiling. */
+const BLOB_THEMES = {
+  solar: [
+    { baseX: 0.3, baseY: 0.35, r: 0.55, color: 'rgba(80,60,120,ALPHA)', alpha: 0.5, speed: 0.02, phase: 0 },
+    { baseX: 0.72, baseY: 0.4, r: 0.5, color: 'rgba(110,70,90,ALPHA)', alpha: 0.4, speed: 0.015, phase: 2 },
+    { baseX: 0.5, baseY: 0.7, r: 0.6, color: 'rgba(60,50,100,ALPHA)', alpha: 0.45, speed: 0.018, phase: 4 },
+    { baseX: 0.18, baseY: 0.72, r: 0.26, color: 'rgba(190,120,80,ALPHA)', alpha: 0.22, speed: 0, phase: 1 },
+    { baseX: 0.62, baseY: 0.18, r: 0.22, color: 'rgba(210,140,150,ALPHA)', alpha: 0.2, speed: 0, phase: 3 },
+    { baseX: 0.86, baseY: 0.68, r: 0.28, color: 'rgba(120,80,150,ALPHA)', alpha: 0.24, speed: 0, phase: 5 },
+    { baseX: 0.42, baseY: 0.46, r: 0.16, color: 'rgba(255,214,170,ALPHA)', alpha: 0.14, speed: 0, phase: 6 },
+  ],
+  universe: [
+    { baseX: 0.34, baseY: 0.32, r: 0.58, color: 'rgba(38,58,120,ALPHA)', alpha: 0.5, speed: 0.02, phase: 0 },
+    { baseX: 0.7, baseY: 0.44, r: 0.52, color: 'rgba(30,86,110,ALPHA)', alpha: 0.42, speed: 0.015, phase: 2 },
+    { baseX: 0.5, baseY: 0.74, r: 0.6, color: 'rgba(52,44,110,ALPHA)', alpha: 0.46, speed: 0.018, phase: 4 },
+    { baseX: 0.2, baseY: 0.66, r: 0.26, color: 'rgba(40,120,140,ALPHA)', alpha: 0.22, speed: 0, phase: 1 },
+    { baseX: 0.66, baseY: 0.2, r: 0.24, color: 'rgba(90,70,170,ALPHA)', alpha: 0.22, speed: 0, phase: 3 },
+    { baseX: 0.88, baseY: 0.7, r: 0.28, color: 'rgba(24,70,130,ALPHA)', alpha: 0.24, speed: 0, phase: 5 },
+    { baseX: 0.46, baseY: 0.5, r: 0.16, color: 'rgba(150,210,255,ALPHA)', alpha: 0.12, speed: 0, phase: 6 },
+  ]
+};
+
+// Falls back rather than rendering an empty black screen if a registry entry
+// ever ships without a blob set — the same posture theme.js's own accessors
+// take for a theme it doesn't recognise.
+const blobs = BLOB_THEMES[currentTheme()] || BLOB_THEMES.solar;
 
 function paintGlow(x, y, r, color, alpha) {
   const g = ctx.createRadialGradient(x, y, 0, x, y, r);

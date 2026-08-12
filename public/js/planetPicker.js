@@ -11,11 +11,68 @@ import { currentTier, tierSettings, onTierChange } from './quality.js';
 /* Imported as `themeLabel` rather than `label`, here and in scene.js: both
    files already use `label` for DOM/texture-caption locals, and a themed
    string silently shadowed by a <span> would be a very quiet bug. */
-import { label as themeLabel } from './theme.js';
+import { label as themeLabel, currentTheme, DEFAULT_THEME } from './theme.js';
 
 /* ============================================================
    PLANET PICKER — twinkling background stars
+
+   THE COLOUR/DEPTH PASS (Plan 4 Phase 4) IS TIER-GATED, and it is the one
+   piece of runtime work the whole of Plan 4 adds. Three levels, using
+   quality.js's existing tier vocabulary rather than a second gating scheme
+   of this file's own:
+
+     high   → 'full'    themed colour per star, a glow on the two nearest
+                        layers, and one extra far layer for depth
+     medium → 'reduced' themed colour per star, nothing else
+     low    → 'off'     exactly what this did before the phase: no inline
+                        colour, no glow, no extra layer, so the low tier's
+                        DOM and paint cost are unchanged by construction
+                        rather than by measurement
+
+   prefers-reduced-motion forces the low tier (quality.js's precedence
+   chain), so it lands on 'off' without this file testing for it.
 ============================================================ */
+
+/* Colours as [r, g, b] triples rather than strings, because each one is
+   composed twice — once at the layer's own alpha for the dot, once fainter
+   for its glow — and two hand-written rgba() strings that must stay in step
+   is exactly the kind of duplication that drifts.
+
+   Back → front. Solar's dominant tone is styles.css's own
+   rgba(255,245,225,.8), so 'off' and 'reduced' differ in richness rather
+   than in hue; universe swaps the whole range cool. */
+const STARFIELD_PALETTES = {
+  solar: [
+    [[255, 245, 225], [255, 232, 196], [255, 214, 190]],
+    [[255, 245, 225], [255, 226, 180], [255, 205, 175]],
+    [[255, 250, 240], [255, 232, 190], [242, 180, 186]]
+  ],
+  universe: [
+    [[198, 214, 255], [168, 196, 255], [180, 230, 240]],
+    [[214, 230, 255], [160, 190, 255], [186, 168, 255]],
+    [[235, 244, 255], [150, 205, 255], [190, 170, 255]]
+  ]
+};
+
+/* The depth half of the pass: the CSS gives every star a flat 0.8 alpha, so
+   the layers only read as depth once the far ones are actually fainter.
+   Index matches the layer list below; FAR_ALPHA is the extra 'full' layer. */
+const STARFIELD_LAYER_ALPHA = [0.55, 0.8, 0.95];
+const STARFIELD_FAR_ALPHA = 0.4;
+// Glow radius in px, back → front. 0 means no glow on that layer.
+const STARFIELD_GLOW_PX = [0, 3, 5];
+
+function starfieldPalette() {
+  return STARFIELD_PALETTES[currentTheme()] || STARFIELD_PALETTES[DEFAULT_THEME];
+}
+
+// 'full' | 'reduced' | 'off'
+function starfieldLevel(tier = currentTier()) {
+  if (tier === 'low') return 'off';
+  if (tier === 'medium') return 'reduced';
+  return 'full';
+}
+
 (function setupPickerStars() {
   const starsContainer = document.getElementById('startStars');
 
@@ -27,23 +84,92 @@ import { label as themeLabel } from './theme.js';
     { count: 20, size: [2, 3.5], duration: [2, 3.5], parallax: 26 },
   ];
 
-  const layerEls = layers.map((layer) => {
+  // The extra depth layer 'full' adds: further out than layer 0, so smaller,
+  // dimmer, slower and barely parallaxed. Built lazily and destroyed again on
+  // a downgrade — see applyStarfieldTier — so a machine that never reaches
+  // high never pays for these 80 elements at all.
+  const FAR_LAYER = { count: 80, size: [1, 1.4], duration: [3.5, 6], parallax: 2 };
+
+  function makeStar(layer) {
+    const star = document.createElement('span');
+    star.style.left = `${Math.random() * 100}%`;
+    star.style.top = `${Math.random() * 100}%`;
+    const size = layer.size[0] + Math.random() * (layer.size[1] - layer.size[0]);
+    star.style.width = `${size}px`;
+    star.style.height = `${size}px`;
+    star.style.animationDelay = `${Math.random() * 3}s`;
+    star.style.animationDuration = `${layer.duration[0] + Math.random() * (layer.duration[1] - layer.duration[0])}s`;
+    return star;
+  }
+
+  const layerEls = layers.map((layer, depth) => {
     const layerEl = document.createElement('div');
     layerEl.className = 'star-layer';
-    for (let i = 0; i < layer.count; i++) {
-      const star = document.createElement('span');
-      star.style.left = `${Math.random() * 100}%`;
-      star.style.top = `${Math.random() * 100}%`;
-      const size = layer.size[0] + Math.random() * (layer.size[1] - layer.size[0]);
-      star.style.width = `${size}px`;
-      star.style.height = `${size}px`;
-      star.style.animationDelay = `${Math.random() * 3}s`;
-      star.style.animationDuration = `${layer.duration[0] + Math.random() * (layer.duration[1] - layer.duration[0])}s`;
-      layerEl.appendChild(star);
-    }
+    for (let i = 0; i < layer.count; i++) layerEl.appendChild(makeStar(layer));
     starsContainer.appendChild(layerEl);
-    return { el: layerEl, parallax: layer.parallax };
+    return { el: layerEl, parallax: layer.parallax, depth };
   });
+
+  /* Colour is written as an inline style so it overrides styles.css's flat
+     rgba(255,245,225,.8) — and cleared back to '' at 'off', which hands the
+     stylesheet's own value back rather than this file guessing at it. That is
+     what makes the low tier byte-identical to the pre-phase behaviour instead
+     of merely similar. */
+  function paintLayer(entry, level) {
+    const alpha = entry.far ? STARFIELD_FAR_ALPHA : STARFIELD_LAYER_ALPHA[entry.depth];
+    const tones = entry.far ? starfieldPalette()[0] : starfieldPalette()[entry.depth];
+    const glowPx = level === 'full' && !entry.far ? STARFIELD_GLOW_PX[entry.depth] : 0;
+
+    Array.from(entry.el.children).forEach((star) => {
+      if (level === 'off') {
+        star.style.background = '';
+        star.style.boxShadow = '';
+        return;
+      }
+      const [r, g, b] = tones[Math.floor(Math.random() * tones.length)];
+      star.style.background = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      // Recomputed rather than remembered: a downgrade only ever removes the
+      // glow, and re-rolling the tone on a re-paint costs nothing visible on
+      // a field of twinkling dots.
+      star.style.boxShadow = glowPx ? `0 0 ${glowPx}px rgba(${r}, ${g}, ${b}, 0.55)` : '';
+    });
+  }
+
+  let farEntry = null;
+
+  function setFarLayer(on) {
+    if (on === !!farEntry) return;
+    if (!on) {
+      const i = layerEls.indexOf(farEntry);
+      if (i >= 0) layerEls.splice(i, 1);
+      farEntry.el.remove();
+      farEntry = null;
+      return;
+    }
+    const layerEl = document.createElement('div');
+    layerEl.className = 'star-layer';
+    for (let i = 0; i < FAR_LAYER.count; i++) layerEl.appendChild(makeStar(FAR_LAYER));
+    // Behind the other layers: siblings with no z-index paint in tree order,
+    // and the furthest field belongs underneath the ones in front of it.
+    starsContainer.insertBefore(layerEl, starsContainer.firstChild);
+    farEntry = { el: layerEl, parallax: FAR_LAYER.parallax, depth: 0, far: true };
+    layerEls.push(farEntry);
+  }
+
+  /* Re-resolves the level and rebuilds what it owns. Registered with
+     quality.js so a mid-session tier move — the rolling frame-time average
+     stepping down, or the entry screen's selector moving in either
+     direction — is honoured here too. Without this, a machine that started
+     high and was measured down to low would keep paying for 80 extra
+     elements and 120 glows on the one screen the scene is paused behind. */
+  function applyStarfieldTier() {
+    const level = starfieldLevel();
+    setFarLayer(level === 'full');
+    layerEls.forEach((entry) => paintLayer(entry, level));
+  }
+
+  applyStarfieldTier();
+  onTierChange(applyStarfieldTier);
 
   /* Subtle parallax tied to pointer position -- each layer drifts opposite
      the pointer by its own amount, and the CSS transition on .star-layer

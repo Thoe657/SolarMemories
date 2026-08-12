@@ -33,7 +33,7 @@ import {
 } from './quality.js';
 // `label` is aliased because this file already uses that word for the portals'
 // caption-plate meshes and for the string drawn on them.
-import { label as themeLabel, groupingName, themeConfig, DEFAULT_THEME } from './theme.js';
+import { label as themeLabel, groupingName, themeConfig, currentTheme, DEFAULT_THEME } from './theme.js';
 
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -120,6 +120,52 @@ const bgMat = new THREE.MeshBasicMaterial({ map: bgTex, side: THREE.BackSide, fo
 const bgMesh = new THREE.Mesh(bgGeo, bgMat);
 scene.add(bgMesh);
 
+/* ============================================================
+   THEMED COLOUR RANGES FOR THE TWO RUNTIME STAR LAYERS (Plan 4 Phase 4)
+
+   Both tables below are a *colour* change and nothing else — same counts,
+   same geometry, same draw calls, same per-frame work. Phase 4's whole
+   licence in this file is "a uniform change, not a structural one", and the
+   acceptance test is that the low tier's average frame time does not move.
+
+   Why the tables live here and not in theme.js's registry, unlike the sky
+   family: these are renderer-shaped values (a THREE hex, a per-vertex
+   attribute palette) that only this module can consume, and Phase 4's file
+   set is scene.js / planetPicker.js / entryScreen.js. Both are keyed by
+   theme name with a DEFAULT_THEME fallback, so a registry entry that never
+   named a palette degrades to solar's rather than rendering colourless —
+   the same posture themeConfig() takes.
+
+   SOLAR'S ENTRIES ARE TODAY'S VALUES, UNCHANGED, and solar must keep coming
+   out pixel-identical; see the one-colour branch in createStars() for how
+   that is guaranteed by construction rather than by hoping the two paths
+   agree.
+============================================================ */
+
+/* The distant star field's colour range. Repeats are the weighting — a
+   palette is sampled uniformly, so listing a tone twice makes it twice as
+   common, which reads more clearly at a glance than a parallel weights
+   array.
+
+   Solar is a single warm white, exactly as it has always been. Universe is
+   the cool end of the same idea: mostly blue-white and cool blue with a
+   little pale cyan and violet, and one warm tone left in — a sky of one
+   temperature reads as a gradient rather than as stars. */
+const STAR_COLOR_THEMES = {
+  solar: [0xffeec2],
+  universe: [
+    0xdfe9ff, 0xdfe9ff, 0xdfe9ff, 0xdfe9ff,
+    0xa9c6ff, 0xa9c6ff, 0xa9c6ff,
+    0xbfe9f2, 0xbfe9f2,
+    0xc9b8ff, 0xc9b8ff,
+    0xffe6c8
+  ]
+};
+
+function starPalette() {
+  return STAR_COLOR_THEMES[currentTheme()] || STAR_COLOR_THEMES[DEFAULT_THEME];
+}
+
 /* ----- Distant twinkling stars (full sphere, including poles) -----
    Rebuildable at another tier's count by applyQualityTier() below, since
    unlike the baked background this is cheap to tear down and recreate. ----- */
@@ -138,7 +184,43 @@ function createStars(count) {
     pos[i*3 + 2] = r * Math.sin(phi) * Math.sin(theta);
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const mat = new THREE.PointsMaterial({ color: 0xffeec2, size: 0.06, transparent: true, opacity: 0.6 });
+
+  const palette = starPalette();
+
+  /* A single-colour palette takes the material-colour path this has always
+     used, untouched — no colour attribute, no vertexColors, nothing for the
+     "solar is unchanged" claim to be wrong about. A theme opts into the range
+     by *having* more than one colour, the same way theme.js lets a theme opt
+     into derived grouping names by having a non-empty pool, rather than by
+     anything checking for a theme by name. */
+  if (palette.length === 1) {
+    const mat = new THREE.PointsMaterial({ color: palette[0], size: 0.06, transparent: true, opacity: 0.6 });
+    return new THREE.Points(geo, mat);
+  }
+
+  /* Per-vertex colours, which is still ONE draw call and one more small
+     attribute — the range costs count*3 floats built once per tier change,
+     and nothing per frame.
+
+     Colour space: unlike the fairy lights' ShaderMaterial (see
+     fairyOutputColor below), this goes through three's built-in points
+     shader, which *does* have the output stage. A `color` attribute is read
+     as already being in the linear working space, and THREE.Color's
+     constructor is exactly the sRGB→linear half — so writing its components
+     straight in lands the same value the material-colour branch above hands
+     to the same shader. The two branches differ in plumbing, not in result;
+     that is why solar can be left on the old one for certainty without the
+     new one being suspect. */
+  const swatches = palette.map((hex) => new THREE.Color(hex));
+  const col = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const c = swatches[Math.floor(Math.random() * swatches.length)];
+    col[i * 3]     = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({ size: 0.06, transparent: true, opacity: 0.6, vertexColors: true });
   return new THREE.Points(geo, mat);
 }
 
@@ -176,15 +258,36 @@ scene.add(fairyGroup);
 // 50+40+30 the scene has always had; low drops to 24 (the pre-Plan-3 low path
 // built 45, and could only reach that at module load).
 
+/* One colour per population, per theme (Plan 4 Phase 4). Solar's three are
+   the hexes this file has always used; universe steps the same three shells
+   to the cool end — a blue, a blue-white and a soft violet, at the same
+   lightness so the lights stay lights rather than becoming dim smudges over
+   a near-black sky.
+
+   THIS IS THE ONLY THING THE THEME CHANGES ABOUT THE FAIRY LIGHTS. The
+   shares, radii, sizes, opacities, drift and twinkle are all untouched, and
+   the colour is consumed at exactly the two places it was before —
+   fairyOutputColor() on the shader path and createFloatingLights() on the
+   mesh fallback — so both paths are themed by construction and neither
+   gained a step. In particular nothing here reintroduces per-object
+   animation: the shader still evaluates drift and twinkle on the GPU from
+   uTime, and this only changes the constant each point carries. */
+const FAIRY_COLOR_THEMES = {
+  solar: [0xffd9a0, 0xffe8c0, 0xffcf9a],
+  universe: [0x9ec8ff, 0xd8e8ff, 0xb7a4ff]
+};
+
+const fairyPalette = FAIRY_COLOR_THEMES[currentTheme()] || FAIRY_COLOR_THEMES[DEFAULT_THEME];
+
 // The three populations, as *shares* of the total so a tier scales them
 // together instead of one group vanishing first. At the high tier's 120 they
 // come out at exactly the original 50 / 40 / 30 — that is the point, the high
 // tier has to be untouched. (medium's 60 → 25/20/15; low's 24 → 10/8/6.)
 const FAIRY_POPULATIONS = [
-  { share: 50 / 120, color: 0xffd9a0, radiusMin: 3, radiusMax: 7 },
-  { share: 40 / 120, color: 0xffe8c0, radiusMin: 6, radiusMax: 11 },
-  { share: 30 / 120, color: 0xffcf9a, radiusMin: 4, radiusMax: 9 }
-];
+  { share: 50 / 120, radiusMin: 3, radiusMax: 7 },
+  { share: 40 / 120, radiusMin: 6, radiusMax: 11 },
+  { share: 30 / 120, radiusMin: 4, radiusMax: 9 }
+].map((pop, i) => ({ ...pop, color: fairyPalette[i] }));
 
 const FAIRY_BULB_RADIUS = 0.045;
 const FAIRY_GLOW_RADIUS = 0.12;
