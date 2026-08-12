@@ -395,6 +395,14 @@ ring layout returns `ringSlot()`/`applyRingLayout()` *and* the reasons they are 
 way. Docs go through semantic extraction and cost tokens (the 2026-08-12 run: ~97k input);
 code is AST-only and free. Re-extract docs only when they change materially.
 
+**Windows trap: `graphify-out/.graphify_root` and `.graphify_python` must not have a BOM.**
+The skill's install step writes them with PowerShell `Out-File -Encoding utf8`, which on
+Windows PowerShell 5.1 means *UTF-8 with BOM* — the post-commit hook then reads
+`﻿C:\Users\...` as a path and every rebuild dies with `WinError 123`, silently, in
+`~/.cache/graphify-rebuild.log` while the commit itself succeeds. Fixed here on
+2026-08-12 by rewriting both files BOM-less; re-check them (`head -c3`) after any re-run
+of the skill's install step, and read the log rather than assuming the hook worked.
+
 Known soft spot: `src/config.js`'s constants are under-linked — the AST models the config
 exports as destructured import blobs, so doc edges aimed at `MOON_STAR_CAP`, `DATA_DIR`, etc.
 land nowhere and get dropped (41 such edges, ~3% of raw, on the first clean build).
