@@ -856,9 +856,21 @@
   }
 
   /* ---------- Hyperspace transition ---------- */
+  /* width/height are load-bearing, not decoration. A canvas is a replaced
+     element: with `width: auto` it takes its *intrinsic* size (the width and
+     height attributes, i.e. the backing store) and `inset` cannot stretch it,
+     so the element is only as big as the pixels it was allocated. That
+     coincides with the viewport at the high and medium tiers and does not at
+     low, where planetPicker.js's hyperspaceScale() allocates 70% in each axis
+     — which is exactly how the low tier ended up playing the transition in a
+     70% box in the top-left corner. #entryScreenCanvas above downsamples the
+     same way and has always had these two lines. */
   #hyperspaceCanvas {
     position: fixed;
     inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
     z-index: 2000;
     pointer-events: none;
     opacity: 0;

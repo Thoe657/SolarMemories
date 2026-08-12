@@ -62,7 +62,14 @@ export const TIER_SETTINGS = {
   low: {
     pixelRatioCap: 1,
     antialias: false,
-    targetFps: 30,
+    // 60 like the others, deliberately. The low tier's job is to reach the
+    // same frame rate by drawing *less*, not to settle for a slower one —
+    // it already gives up antialias, half the pixel ratio, two thirds of the
+    // fairy lights and a smaller card texture to pay for it. It targeted 30
+    // until 2026-08-12, which had the perverse result of making low the
+    // slowest tier by design on top of the throttle bug it interacted with
+    // (see scene.js's animate()).
+    targetFps: 60,
     distantStars: 400,
     fairyLights: 24,
     cardTexture: { width: 384, height: 450 },
@@ -84,12 +91,17 @@ export const TIER_SETTINGS = {
    skips the learning it claims to have already done. Bump this whenever
    TIER_SETTINGS changes meaningfully.
 
+   v2 (2026-08-12): every tier targets 60fps, and scene.js's throttle no
+   longer loses frames to vsync aliasing. Every v1 verdict was measured
+   against a loop that couldn't hit its own target, so all of them are
+   discarded rather than trusted.
+
    Every access is wrapped: localStorage is absent in some embeddings,
    throws SecurityError outright when site data is disabled, and throws
    QuotaExceededError on write in private mode. None of that is allowed
    to stop the app from starting — it just means the tier doesn't persist.
 ============================================================ */
-export const QUALITY_SCHEMA_VERSION = 1;
+export const QUALITY_SCHEMA_VERSION = 2;
 const STORAGE_KEY = 'solarMemories.quality';
 
 function readStored() {

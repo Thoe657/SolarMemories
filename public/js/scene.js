@@ -1530,6 +1530,12 @@ let TARGET_FPS = quality.targetFps;
 let FRAME_INTERVAL = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
 
+// How early a frame may arrive and still be drawn. Sized to swallow vsync
+// quantisation without being large enough to let a whole extra frame through
+// at any plausible refresh rate — see the throttle in animate() for why a
+// zero-tolerance comparison is the wrong shape.
+const THROTTLE_TOLERANCE_MS = 4;
+
 /* ----- Why there are two pause flags and not one -----
    Two entirely independent things can mean "don't draw": the tab is hidden,
    and the planet view isn't the screen the user is looking at. They start and
@@ -1646,18 +1652,18 @@ onTierChange(applyQualityTier);
    *rendered* time is discarded after every resume, not just the first: every
    planet entry has the same hitch, and none of them is evidence.
 
-   Why the threshold is 1.8× the target interval (30ms against a 60fps
-   target) and not the old benchmark's 22ms: the loop throttles with
-   `now - lastFrameTime < FRAME_INTERVAL`, and on a display running at
-   exactly the target rate the timestamp lands either side of that boundary
-   by fractions of a millisecond, so a perfectly healthy machine skips the
-   odd frame and averages ~25ms. A 22ms line would read that as failure and
-   downgrade a machine that was keeping up. 30ms is below any real 60fps
-   average and above that artifact. */
+   Why the threshold is 1.5× the target interval (25ms against a 60fps
+   target): it used to be 1.8×, sized around a throttle that lost every other
+   frame to vsync jitter and so read ~25ms on a machine that was actually
+   fine. With that fixed (see animate()) a healthy machine averages ~16.7ms
+   and the slack is no longer needed, so the line can sit where it means
+   something: a sustained 40fps is a tier this machine isn't holding. Don't
+   tighten it much further — 1.25× (21ms) is inside the range a 50Hz display
+   or a modest hitch reaches without the tier being wrong. */
 const TIER_WARMUP_MS = 4000;    // rendered time ignored after every resume
 const TIER_SUSTAIN_MS = 2000;   // how long "bad" must hold before stepping down
 const TIER_EMA_TAU_MS = 500;    // the average's time constant
-const TIER_BAD_FACTOR = 1.8;    // multiple of the target frame interval that counts as bad
+const TIER_BAD_FACTOR = 1.5;    // multiple of the target frame interval that counts as bad
 
 let tierWarmupLeft = TIER_WARMUP_MS;
 let tierFrameAvg = 0;
@@ -1838,8 +1844,22 @@ function animate(now = 0) {
   // flip rather than a restart.
   if (animPaused) return;
 
-  // Throttle to TARGET_FPS
-  if (now - lastFrameTime < FRAME_INTERVAL) return;
+  /* ----- Throttle to TARGET_FPS -----
+     The tolerance is the whole point and must not be removed. rAF fires on
+     the display's vsync, so the elapsed time arrives quantised to multiples
+     of the refresh interval; comparing it against FRAME_INTERVAL exactly
+     means a target that *equals* a vsync multiple loses every other frame to
+     sub-millisecond jitter, and the loop then runs at the next multiple down.
+     That is how the 30fps low tier used to render at 20 (60Hz display: the
+     tick at 33.33ms misses the 33.33ms line, so the frame waits for 50ms),
+     and how a 60fps target used to average ~50fps on a healthy machine.
+     Accepting a frame that is up to THROTTLE_TOLERANCE_MS early costs at most
+     one early frame and makes the cap land on the rate it names.
+
+     Overshoot is deliberate on refresh rates that aren't a multiple of the
+     target: a 144Hz display renders at 13.9ms (~72fps) rather than dropping
+     to 20.8ms (~48fps). Slightly over the cap beats visibly under it. */
+  if (now - lastFrameTime < FRAME_INTERVAL - THROTTLE_TOLERANCE_MS) return;
   const frameDelta = lastFrameTime ? now - lastFrameTime : 0;
   lastFrameTime = now;
 
