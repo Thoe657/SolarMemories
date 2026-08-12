@@ -22,26 +22,88 @@
      keeps the tokens defined even if that script never ran, so a missing
      attribute degrades to the default theme rather than to no colours.
 
-     These four values are duplicated in js/theme.js's registry, because
-     cards.js draws to a canvas where custom properties don't reach. The
-     two must be kept in step — change one, change the other.
+     These values are duplicated in js/theme.js's registry, because cards.js
+     draws to a canvas where custom properties don't reach. The two must be
+     kept in step — same keys, same values, in both blocks. Change one,
+     change the other.
 
-     The universe block is byte-identical for now, on purpose: Phase 1's
-     acceptance test is "nothing looks different in either theme". Phase 5
-     gives it its real values. */
+     Phase 5 grew the set from four tokens to twenty. Not scope creep: the
+     four covered the card face and the panel background, and everything
+     *inside* a panel — the field backgrounds, the pill surfaces, the muted
+     label text, the disabled button — was a warm literal chosen against
+     cream. Left alone, universe would have had light-on-light form fields.
+     Every solar value below is the exact literal that used to sit at the
+     rule that now reads the token, which is what keeps the default theme
+     pixel-identical through this phase.
+
+     Roles, so a new rule picks the right one rather than a new literal:
+       --card-bg/-text  the content surface and its body ink
+       --card-muted     secondary text on that surface (labels, subs)
+       --card-faint     tertiary text (hints, placeholders, inactive pills)
+       --heading        display text on the surface (panel/read/form titles)
+       --accent         a filled highlight; --on-accent is its text
+       --accent-deep    button fills, focus borders, the checkbox
+       --field-bg/-border  inputs and the boxes that behave like inputs
+       --surface-soft/-sunk/-hover  the three raised/inset panel fills
+       --surface-rim    an edge for the panel itself; transparent in solar */
   :root[data-theme="solar"],
   :root:not([data-theme]) {
     --card-bg: #fffaf0;
     --card-text: #4a3b2a;
+    --card-muted: #8a7a68;
+    --card-faint: #b3a18c;
     --accent: #f2a6b0;
     --accent-deep: #d6798a;
+    --heading: #d6798a;
+    --on-accent: #6e2530;
+    --field-bg: #fffdfa;
+    --field-border: #ecdfce;
+    --surface-soft: #fdf8ef;
+    --surface-sunk: #f3ece1;
+    --surface-hover: #fdf6ec;
+    --surface-rim: transparent;
+    --btn-disabled: #e8d6d3;
+    --photo-backdrop: #111;
+    --milestone-fg: #a9791a;
+    --milestone-bg: rgba(255, 217, 160, 0.35);
+    --milestone-border: rgba(169, 121, 26, 0.35);
+    --danger: #b23a3a;
   }
 
+  /* Cool graphite on near-black. --card-bg (luminance 0.1818) and --card-text
+     (pure white) are the two ends of a solved simultaneous constraint, not a
+     taste call — the full derivation is in theme.js beside the same values.
+     The short version: the card must stay 3:1 *above* the sky and the body
+     text must stay 4.5:1 *above* the card, and on this sky those two bounds
+     leave a window about one percent wide. Nudging either of these two hexes
+     leaves it. */
   :root[data-theme="universe"] {
-    --card-bg: #fffaf0;
-    --card-text: #4a3b2a;
-    --accent: #f2a6b0;
-    --accent-deep: #d6798a;
+    --card-bg: #707688;
+    --card-text: #ffffff;
+    --card-muted: #e2e7f5;
+    --card-faint: #c8cfe0;
+    --accent: #a8c4ff;
+    --accent-deep: #5f7fd0;
+    --heading: #e6edff;
+    --on-accent: #16203a;
+    /* The inset family is the card scaled to 90% per channel, so "sunk below
+       the surface" survives the surface itself getting darker. Derived, not
+       re-picked: it holds each one's ratio against the card exactly. */
+    --field-bg: #515768;
+    --field-border: #8991a3;
+    --surface-soft: #646a7a;
+    --surface-sunk: #5c6272;
+    --surface-hover: #676e7f;
+    --surface-rim: rgba(200, 215, 255, 0.30);
+    --btn-disabled: #505664;
+    --photo-backdrop: #0b0d14;
+    --milestone-fg: #ffe1a3;
+    --milestone-bg: rgba(255, 217, 160, 0.14);
+    --milestone-border: rgba(255, 217, 160, 0.42);
+    /* Solar's danger is *darker* than its muted ink; on a dark surface the
+       emphasis inverts, so this is lifted to muted's luminance rather than
+       dropped below it (2.97:1 -> 3.67:1 against the card). */
+    --danger: #ffe0e0;
   }
 
   * { box-sizing: border-box; }
@@ -199,7 +261,11 @@
     max-height: 86vh;
     overflow-y: auto;
     padding: 26px 26px 22px;
-    box-shadow: 0 30px 60px rgba(0,0,0,0.35);
+    /* Plan 4 Phase 5: --surface-rim is transparent in solar, so this extra
+       ring is a no-op there; in universe it is the same faint luminous edge
+       the card textures carry. A layered box-shadow rather than a border,
+       because a border would shift layout in both themes. */
+    box-shadow: 0 30px 60px rgba(0,0,0,0.35), 0 0 0 1px var(--surface-rim);
     transform: translateY(16px) scale(0.97);
     transition: transform 0.25s ease;
   }
@@ -213,12 +279,12 @@
     font-size: 30px;
     font-weight: 700;
     margin: 0 0 4px;
-    color: var(--accent-deep);
+    color: var(--heading);
   }
 
   .panel .sub {
     font-size: 13px;
-    color: #8a7a68;
+    color: var(--card-muted);
     margin: 0 0 18px;
   }
 
@@ -230,7 +296,7 @@
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: #8a7a68;
+    color: var(--card-muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 6px;
@@ -248,11 +314,11 @@
     text-align: center;
     padding: 9px 8px;
     border-radius: 10px;
-    border: 1.5px solid #ecdfce;
-    background: #fdf8ef;
+    border: 1.5px solid var(--field-border);
+    background: var(--surface-soft);
     font-size: 13px;
     font-weight: 600;
-    color: #b3a18c;
+    color: var(--card-faint);
     cursor: pointer;
     transition: all 0.15s;
     user-select: none;
@@ -261,7 +327,7 @@
   .type-pill.active {
     border-color: var(--accent-deep);
     background: var(--accent);
-    color: #6e2530;
+    color: var(--on-accent);
   }
 
   input[type="text"], input[type="date"], textarea {
@@ -270,8 +336,8 @@
     font-size: 14px;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1.5px solid #ecdfce;
-    background: #fffdfa;
+    border: 1.5px solid var(--field-border);
+    background: var(--field-bg);
     color: var(--card-text);
     resize: vertical;
   }
@@ -284,19 +350,19 @@
   textarea { min-height: 90px; line-height: 1.5; }
 
   .file-drop {
-    border: 1.5px dashed #ecdfce;
+    border: 1.5px dashed var(--field-border);
     border-radius: 10px;
     padding: 16px;
     text-align: center;
     font-size: 13px;
-    color: #b3a18c;
+    color: var(--card-faint);
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
   }
 
   .file-drop:hover {
     border-color: var(--accent-deep);
-    background: #fdf6ec;
+    background: var(--surface-hover);
   }
 
   .file-drop.has-file {
@@ -345,13 +411,13 @@
 
   .btn-primary:hover { filter: brightness(1.08); }
   .btn-primary:disabled {
-    background: #e8d6d3;
+    background: var(--btn-disabled);
     cursor: not-allowed;
   }
 
   .btn-secondary {
-    background: #f3ece1;
-    color: #8a7a68;
+    background: var(--surface-sunk);
+    color: var(--card-muted);
   }
 
   .btn-secondary:hover { filter: brightness(0.97); }
@@ -367,7 +433,11 @@
     scrollbar-width: none;        /* Firefox */
     -ms-overflow-style: none;     /* IE/Edge */  
     padding: 0;
-    box-shadow: 0 30px 70px rgba(0,0,0,0.4);
+    /* Plan 4 Phase 5: --surface-rim is transparent in solar, so this extra
+       ring is a no-op there; in universe it is the same faint luminous edge
+       the card textures carry. A layered box-shadow rather than a border,
+       because a border would shift layout in both themes. */
+    box-shadow: 0 30px 70px rgba(0,0,0,0.4), 0 0 0 1px var(--surface-rim);
     transform: translateY(16px) scale(0.96);
     transition: transform 0.25s ease;
   }
@@ -406,7 +476,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background: #111;
+    background: var(--photo-backdrop);
     border-radius: 12px;
     overflow: hidden;
   }
@@ -426,7 +496,7 @@
 
   .read-date {
     font-size: 12px;
-    color: #b3a18c;
+    color: var(--card-faint);
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -437,7 +507,7 @@
     font-family: 'Caveat', cursive;
     font-size: 28px;
     font-weight: 700;
-    color: var(--accent-deep);
+    color: var(--heading);
     margin: 0 0 10px;
   }
 
@@ -462,8 +532,8 @@
   .read-close {
     display: block;
     margin: 18px auto 0;
-    background: #f3ece1;
-    color: #8a7a68;
+    background: var(--surface-sunk);
+    color: var(--card-muted);
     border: none;
     border-radius: 10px;
     padding: 10px 24px;
@@ -788,7 +858,11 @@
     border-radius: 16px;
     padding: 22px;
     width: min(340px, 90vw);
-    box-shadow: 0 24px 50px rgba(0,0,0,0.4);
+    /* Plan 4 Phase 5: --surface-rim is transparent in solar, so this extra
+       ring is a no-op there; in universe it is the same faint luminous edge
+       the card textures carry. A layered box-shadow rather than a border,
+       because a border would shift layout in both themes. */
+    box-shadow: 0 24px 50px rgba(0,0,0,0.4), 0 0 0 1px var(--surface-rim);
   }
 
   .new-planet-form.hidden {
@@ -800,7 +874,7 @@
     font-size: 26px;
     font-weight: 700;
     margin: 0 0 14px;
-    color: var(--accent-deep);
+    color: var(--heading);
   }
 
   .new-planet-form input[type="text"] {
@@ -809,8 +883,8 @@
     font-size: 14px;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1.5px solid #ecdfce;
-    background: #fffdfa;
+    border: 1.5px solid var(--field-border);
+    background: var(--field-bg);
     color: var(--card-text);
     margin-bottom: 14px;
   }
@@ -824,7 +898,7 @@
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: #8a7a68;
+    color: var(--card-muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 8px;
@@ -867,9 +941,9 @@
     font-family: 'Quicksand', sans-serif;
     font-size: 13px;
     font-weight: 600;
-    color: #8a7a68;
-    border: 1.5px solid #ecdfce;
-    background: #fdf8ef;
+    color: var(--card-muted);
+    border: 1.5px solid var(--field-border);
+    background: var(--surface-soft);
     cursor: pointer;
     transition: all 0.15s;
   }
@@ -877,12 +951,12 @@
   .ring-row .ring-dot.active {
     border-color: var(--accent-deep);
     background: var(--accent);
-    color: #6e2530;
+    color: var(--on-accent);
   }
 
   .form-hint {
     font-size: 12px;
-    color: #b3a18c;
+    color: var(--card-faint);
     margin: 0 0 16px;
   }
 
@@ -917,7 +991,7 @@
     display: block;
     margin: 10px auto 0;
     background: transparent;
-    color: var(--accent-deep);
+    color: var(--heading);
     border: none;
     font-family: 'Quicksand', sans-serif;
     font-size: 13px;
@@ -1106,14 +1180,14 @@
   .trash-list {
     max-height: 160px;
     overflow-y: auto;
-    border: 1.5px solid #ecdfce;
+    border: 1.5px solid var(--field-border);
     border-radius: 10px;
     padding: 4px 6px;
   }
 
   .trash-empty {
     font-size: 12px;
-    color: #b3a18c;
+    color: var(--card-faint);
     padding: 8px 4px;
   }
 
@@ -1123,7 +1197,7 @@
     justify-content: space-between;
     gap: 8px;
     padding: 6px 4px;
-    border-bottom: 1px solid #f3ece1;
+    border-bottom: 1px solid var(--surface-sunk);
     font-size: 13px;
   }
 
@@ -1153,7 +1227,7 @@
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 6px;
-    color: var(--accent-deep);
+    color: var(--heading);
     /* Phase 9: text+padding alone measured ~22px tall, under the 24x24 CSS
        px WCAG tap-target minimum -- these buttons (trash restore/delete
        forever, and the shared-class backup-restore confirm/cancel) are
@@ -1165,11 +1239,11 @@
   }
 
   .trash-item-actions button:hover {
-    background: #f3ece1;
+    background: var(--surface-sunk);
   }
 
   .trash-item-actions .trash-forever-btn {
-    color: #b23a3a;
+    color: var(--danger);
   }
 
   /* ---------- Backup toast ---------- */
@@ -1293,9 +1367,9 @@
     display: inline-block;
     font-size: 12px;
     font-weight: 700;
-    color: #a9791a;
-    background: rgba(255, 217, 160, 0.35);
-    border: 1px solid rgba(169, 121, 26, 0.35);
+    color: var(--milestone-fg);
+    background: var(--milestone-bg);
+    border: 1px solid var(--milestone-border);
     border-radius: 999px;
     padding: 2px 10px;
     margin: 0 0 6px;
@@ -1312,8 +1386,8 @@
     top: calc(100% + 4px);
     left: 0;
     right: 0;
-    background: #fffdfa;
-    border: 1.5px solid #ecdfce;
+    background: var(--field-bg);
+    border: 1.5px solid var(--field-border);
     border-radius: 10px;
     box-shadow: 0 12px 28px rgba(0,0,0,0.12);
     max-height: 160px;
@@ -1328,7 +1402,7 @@
   }
 
   .related-result-item:hover {
-    background: #f3ece1;
+    background: var(--surface-sunk);
   }
 
   .related-chips {
@@ -1342,7 +1416,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #f3ece1;
+    background: var(--surface-sunk);
     color: var(--card-text);
     font-size: 12px;
     font-weight: 600;
@@ -1353,7 +1427,7 @@
   .related-chip button {
     background: transparent;
     border: none;
-    color: #8a7a68;
+    color: var(--card-muted);
     font-size: 13px;
     line-height: 1;
     cursor: pointer;
@@ -1361,7 +1435,7 @@
   }
 
   .related-chip button:hover {
-    color: var(--accent-deep);
+    color: var(--heading);
   }
 
   /* ---------- Linked memories: read view chips ---------- */
@@ -1377,7 +1451,7 @@
     align-items: center;
     gap: 6px;
     max-width: 140px;
-    background: #f3ece1;
+    background: var(--surface-sunk);
     border: none;
     border-radius: 999px;
     padding: 4px 12px 4px 4px;
@@ -1390,7 +1464,7 @@
 
   .related-memory-chip:hover {
     background: var(--accent);
-    color: #6e2530;
+    color: var(--on-accent);
   }
 
   .related-memory-chip img {

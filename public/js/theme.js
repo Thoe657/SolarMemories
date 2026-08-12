@@ -57,12 +57,21 @@ export const DEFAULT_THEME = 'solar';
      backgrounds  — the sky asset family, full paths relative to /public.
                     Phase 3 picks one at random per session (scene.js does
                     that today from its own BG_VARIANTS list).
-     tokens       — the four colour tokens that styles.css also carries as
-                    CSS custom properties. Duplicated on purpose: the DOM
-                    reads the CSS block, and cards.js draws to a canvas
-                    where custom properties don't reach, so Phase 5 has it
-                    read these instead of the hexes it hardcodes today.
-                    The two must be kept in step; styles.css says so too.
+     tokens       — the content-surface palette that styles.css also
+                    carries as CSS custom properties. Duplicated on purpose:
+                    the DOM reads the CSS block, and cards.js draws to a
+                    canvas where custom properties don't reach, so Phase 5
+                    has it read these instead of the hexes it used to
+                    hardcode. THE TWO MUST BE KEPT IN STEP — same keys,
+                    same values, in both theme blocks; styles.css says so
+                    too, and the invariant is deliberately mechanical so it
+                    can be checked by diffing one against the other rather
+                    than by eye.
+     cardPalette  — the canvas-only half: values cards.js draws with that
+                    no DOM rule wants (the card's rim stroke, the letter/
+                    audio placeholder blocks, the milestone gold family).
+                    Kept out of `tokens` precisely so `tokens` can stay
+                    one-for-one with the CSS block.
      nebulaNames  — the 28-name pool mirroring lib/moonNames.js, mapped
                     deterministically from a moon's `index` (see
                     groupingName below). Solar's is EMPTY and stays empty:
@@ -135,11 +144,43 @@ const REGISTRY = {
       'assets/backgrounds/nebula-2.webp',
       'assets/backgrounds/nebula-3.webp'
     ],
+    /* Every value here is the literal that was sitting in styles.css (or,
+       for the cardPalette below, in cards.js) before Phase 5 tokenised it.
+       That is what makes "solar is pixel-identical" a property of the diff
+       rather than a claim about it: the default theme's job in this phase
+       is to write back exactly what was already there. */
     tokens: {
       '--card-bg': '#fffaf0',
       '--card-text': '#4a3b2a',
+      '--card-muted': '#8a7a68',
+      '--card-faint': '#b3a18c',
       '--accent': '#f2a6b0',
-      '--accent-deep': '#d6798a'
+      '--accent-deep': '#d6798a',
+      '--heading': '#d6798a',
+      '--on-accent': '#6e2530',
+      '--field-bg': '#fffdfa',
+      '--field-border': '#ecdfce',
+      '--surface-soft': '#fdf8ef',
+      '--surface-sunk': '#f3ece1',
+      '--surface-hover': '#fdf6ec',
+      '--surface-rim': 'transparent',
+      '--btn-disabled': '#e8d6d3',
+      '--photo-backdrop': '#111',
+      '--milestone-fg': '#a9791a',
+      '--milestone-bg': 'rgba(255, 217, 160, 0.35)',
+      '--milestone-border': 'rgba(169, 121, 26, 0.35)',
+      '--danger': '#b23a3a'
+    },
+    cardPalette: {
+      rim: 'rgba(0,0,0,0.04)',
+      placeholderLetter: '#ece1f5',
+      placeholderAudio: '#dceee6',
+      placeholderIcon: 'rgba(0,0,0,0.35)',
+      milestoneGlow: 'rgba(255, 221, 150, 0.55)',
+      milestoneRing: 'rgba(201, 154, 46, 0.85)',
+      milestoneLine: '#c99a2e',
+      milestoneInner: 'rgba(255, 217, 160, 0.7)',
+      milestoneDate: '#8a6a24'
     },
     nebulaNames: [],
     features: {
@@ -181,15 +222,107 @@ const REGISTRY = {
       'assets/backgrounds/universe-2.webp',
       'assets/backgrounds/universe-3.webp'
     ],
-    // Byte-identical to solar's for now, on purpose: Phase 1's whole
-    // acceptance test is "nothing looks different in either theme". Phase 5
-    // gives these their real cool-graphite values, alongside the matching
-    // CSS block in styles.css.
+    /* THE CARD SURFACE AND ITS INK ARE A SOLVED SIMULTANEOUS CONSTRAINT,
+       NOT TASTE (Plan 4 Phase 5; criterion 2 of the plan's three, and the
+       phase's own "letter text legible at length").
+
+       Two bounds pull in opposite directions on the same number:
+
+         card vs sky   (Lcard + 0.05) / (Lsky + 0.05)  >= 3     <- lighter card
+         text on card  1.05 / (Lcard + 0.05)           >= 4.5   <- darker card
+
+       The second is WCAG AA for normal-size text, and it is the right bar
+       rather than the 3:1 large-text one because the longest thing anyone
+       reads here is a letter: `.read-text.letter` renders at 19px, weight
+       400, in Caveat — under the 24px-regular / 18.66px-bold threshold, and
+       Caveat's small x-height makes it read smaller still, not larger.
+
+       Multiplying the two out, they can only both hold if the sky-to-white
+       span is at least 3 x 4.5 = 13.5:1, i.e. Lsky <= 0.0278. That is the
+       whole problem in one number, and it is why this phase had to reach
+       back into build-backgrounds.js: universe-2 shipped at field p99
+       0.0322 (a 12.8:1 span) and NO card colour could satisfy both against
+       it. Its `gain` came down until it matched its two siblings.
+
+       With the family at 0.0262 / 0.0258 / 0.0269 the binding sky is
+       universe-3, and the window for Lcard is [0.1806, 0.1833] — about one
+       percent wide. #707688 sits at 0.1818, near the middle. Measured on the
+       shipped WebPs, not on the drawing code:
+
+         card vs universe-1/2/3   3.04:1 / 3.07:1 / 3.02:1
+         white on card            4.53:1
+
+       So both hexes below are load-bearing to two decimal places:
+       - GOING DARKER breaks the sky ratio and invalidates the ceiling
+         build-backgrounds.js derives from UNIVERSE_CARD_LUMINANCE. A card
+         that sinks into the sky is the one way this theme makes the app
+         worse rather than different.
+       - GOING LIGHTER breaks the body-text ratio, and the ink cannot absorb
+         it: --card-text is already pure white with nowhere left to go.
+       - BRIGHTENING THE UNIVERSE SKY breaks both at once. The guard in
+         build-backgrounds.js is what catches that.
+
+       The cost of a mid-grey surface, stated plainly so nobody re-derives
+       it as a bug: solar has 10.35:1 of range to spend on its ink hierarchy
+       and universe has 4.53:1, so body/muted/faint land at 4.53 / 3.66 /
+       2.90 instead of 10.35 / 3.99 / 2.40. Secondary text is a shade weaker
+       than solar's and tertiary text is better; body text is what the
+       criterion names and it clears AA.
+
+       The rest of the block keeps solar's *roles* — muted, faint, sunken,
+       soft — and inverts each one's direction: fields and pills go darker
+       than the card so they still read as inset, text goes lighter. */
     tokens: {
-      '--card-bg': '#fffaf0',
-      '--card-text': '#4a3b2a',
-      '--accent': '#f2a6b0',
-      '--accent-deep': '#d6798a'
+      '--card-bg': '#707688',
+      '--card-text': '#ffffff',
+      '--card-muted': '#e2e7f5',
+      '--card-faint': '#c8cfe0',
+      '--accent': '#a8c4ff',
+      // Backgrounds and borders only (buttons, focus rings, the checkbox).
+      // Heading *text* on the card surface uses --heading instead: one value
+      // cannot be both a button dark enough for white text and a heading
+      // light enough to read on graphite.
+      '--accent-deep': '#5f7fd0',
+      '--heading': '#e6edff',
+      '--on-accent': '#16203a',
+      // The inset family is --card-bg scaled to 90% per channel, so "sunk
+      // below the surface" survives the surface itself getting darker.
+      // Derived rather than re-picked: it holds each one's ratio against the
+      // card exactly where it was.
+      '--field-bg': '#515768',
+      '--field-border': '#8991a3',
+      '--surface-soft': '#646a7a',
+      '--surface-sunk': '#5c6272',
+      '--surface-hover': '#676e7f',
+      // Solar's panels sit on the sky as bright shapes and need no edge;
+      // a graphite panel does, so the same faint luminous rim the cards get
+      // is carried on the DOM surfaces as a 1px box-shadow ring.
+      '--surface-rim': 'rgba(200, 215, 255, 0.30)',
+      '--btn-disabled': '#505664',
+      '--photo-backdrop': '#0b0d14',
+      '--milestone-fg': '#ffe1a3',
+      '--milestone-bg': 'rgba(255, 217, 160, 0.14)',
+      '--milestone-border': 'rgba(255, 217, 160, 0.42)',
+      // Solar's danger is *darker* than its muted ink; on a dark surface the
+      // emphasis inverts, so this is lifted to muted's luminance rather than
+      // dropped below it (2.97:1 -> 3.67:1 against the card).
+      '--danger': '#ffe0e0'
+    },
+    /* The milestone gold stays gold in both themes — it is a signal about
+       the memory, not a property of the surface, and decision 9 says cards
+       change only by token and by milestone *shape* (which is Phase 8's).
+       What changes is its direction: dark gold ink on cream becomes light
+       gold ink on graphite. */
+    cardPalette: {
+      rim: 'rgba(206, 221, 255, 0.55)',
+      placeholderLetter: '#4c4560',
+      placeholderAudio: '#3f5a50',
+      placeholderIcon: 'rgba(233, 238, 255, 0.5)',
+      milestoneGlow: 'rgba(255, 221, 150, 0.42)',
+      milestoneRing: 'rgba(255, 214, 130, 0.9)',
+      milestoneLine: '#ffd27a',
+      milestoneInner: 'rgba(255, 240, 210, 0.75)',
+      milestoneDate: '#ffe3ac'
     },
     nebulaNames: NEBULA_NAMES,
     features: {
@@ -313,9 +446,111 @@ export function themeConfig(name = LOAD_THEME) {
   return REGISTRY[name] || REGISTRY[DEFAULT_THEME];
 }
 
-// The four colour tokens, for the canvas renderers that CSS can't reach.
+// The content-surface palette, for the canvas renderers that CSS can't
+// reach. Mirrors the matching block in styles.css key for key.
 export function tokens(name = LOAD_THEME) {
   return themeConfig(name).tokens;
+}
+
+// One token by name, so a caller can ask for '--card-bg' without indexing
+// into the object and getting `undefined` written into a fillStyle (which
+// canvas silently ignores, leaving the previous colour in place — a bug
+// that shows up as "the title is the wrong colour" and nowhere else).
+export function token(key, name = LOAD_THEME) {
+  const value = tokens(name)[key];
+  if (value === undefined) {
+    console.warn(`theme: no such token ${key}`);
+    return '#000';
+  }
+  return value;
+}
+
+// The canvas-only card values (rim, placeholder blocks, milestone gold).
+export function cardPalette(name = LOAD_THEME) {
+  return themeConfig(name).cardPalette;
+}
+
+/* ============================================================
+   PER-PLANET ACCENT, RE-AIMED AT A DARK SURFACE (Plan 4 Phase 5)
+
+   Every accent in the picker's swatch row is a pastel — twelve colours at
+   roughly 80% lightness and 75% saturation — because they were chosen to
+   sit against a cream card and a warm-lit world. Against graphite and a
+   near-black sky the same twelve arrive washed out and nearly
+   indistinguishable from each other: at that lightness the hue has very
+   little of the colour left to carry it.
+
+   So universe pulls the lightness down into a band where the hue can be
+   seen and pushes the saturation up to replace what the lightness gave
+   away. Deliberately a PURE FUNCTION of the stored value, computed at
+   render time: decision 4 forbids a second stored colour, and this plan
+   writes nothing to `data/` at all. The user's choice stays the user's
+   choice; only its rendering is theme-aware.
+
+   Solar returns the input untouched — not "recomputed to the same thing",
+   literally the same string — so the default theme cannot drift by a
+   rounding error in the HSL round trip.
+
+   The band is a clamp rather than a scale on purpose: a clamp is a no-op
+   for any accent already inside it, so a future darker swatch is left
+   alone instead of being dragged to the middle with everything else. */
+/* Tuned against the twelve swatches in index.html, which all sit at lightness
+   0.80-0.83. A harder push (max lightness 0.62, saturation x1.15 + 0.08) was
+   tried first and rejected: it turned the soft pink #f2a6b0 into #f9435b, a
+   red. The point is to make the user's colour readable on a dark surface, not
+   to pick a different one, so the numbers stop where the hue is still
+   obviously the same colour — #f2a6b0 -> #f25f72, #a6e8f2 -> #5fdef2. */
+const ACCENT_MAX_L = 0.66;   // pastels come down to here
+const ACCENT_MIN_L = 0.38;   // nothing is allowed to sink into the sky
+const ACCENT_S_GAIN = 1.08;  // and gets a little of the lost hue back
+const ACCENT_S_LIFT = 0.04;
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return [0, 0, l];
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function hslToRgb(h, s, l) {
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue = (t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)].map((v) => Math.round(v * 255));
+}
+
+function parseHex(hex) {
+  const h = String(hex).replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+export function themedAccent(hex, name = LOAD_THEME) {
+  if (!themeFlag('darkSurfaces', name)) return hex;
+  const rgb = parseHex(hex);
+  if (!rgb) return hex; // not a hex we understand — leave it exactly as given
+  const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
+  const nextL = Math.min(ACCENT_MAX_L, Math.max(ACCENT_MIN_L, l));
+  const nextS = Math.min(1, s * ACCENT_S_GAIN + ACCENT_S_LIFT);
+  const [r, g, b] = hslToRgb(h, nextS, nextL);
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
 // One themed string. Unknown keys return the key itself, so copy that

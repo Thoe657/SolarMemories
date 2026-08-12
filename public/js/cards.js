@@ -3,6 +3,28 @@
    (relies on the global THREE from the CDN <script> tag)
 ============================================================ */
 import { tierSettings } from './quality.js';
+/* ----- Colour comes from the theme, never from a literal (Plan 4 Phase 5) -----
+   This file used to hardcode `#fffaf0` and `#4a3b2a` — the same two hexes
+   styles.css held as --card-bg/--card-text — because a 2D canvas cannot read
+   CSS custom properties. theme.js carries the palette a second time for
+   exactly that reason, so the rule for everything a *card* draws is now: NO
+   COLOUR LITERALS. Every fill and stroke reads `token()` (the values the DOM
+   also uses) or `cardPalette()` (the values only a card wants: its rim, its
+   placeholder blocks, its milestone gold). A literal added back here would be
+   a solar colour the skin has no way to reach — the same trap the themed-copy
+   note further down describes for strings.
+
+   The portal section at the bottom of this file still holds its own warm
+   literals. That is not an oversight: Phase 7 replaces the portal's geometry
+   outright (an unlit black-hole billboard in universe), so retinting the
+   sphere-and-plate drawing here would be tinting something about to be
+   replaced. The one thing it does take from the theme already is the planet's
+   accent — see makeMoonSurfaceTexture.
+
+   The theme is fixed at load (theme.js's opening note), so these are read at
+   draw time and never change under a live texture; that is also why Plan 4
+   decision 5 leaves scene.js's LRU cache key without a theme component. */
+import { token, cardPalette, themedAccent } from './theme.js';
 
 /* ----- The card's drawing space (Plan 3 Phase 6) -----
    Every coordinate, font size, line width and corner radius in this file is
@@ -70,12 +92,18 @@ export function makePolaroidTexture(memory) {
 // unchanged so makePolaroidTexture can branch to the star variant above
 // without altering this path at all.
 function drawPlainPolaroid(ctx, memory, W, H) {
-  // paper background
-  ctx.fillStyle = '#fffaf0';
+  // paper background — the polaroid's mat. It goes graphite in universe; it
+  // does not go away. A photo floating on a dark sky with no border around it
+  // stops reading as an object you could pick up, which is the whole idea the
+  // card is built on.
+  ctx.fillStyle = token('--card-bg');
   roundRect(ctx, 0, 0, W, H, 14);
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+  // Solar's is a barely-there dark hairline that just stops the cream from
+  // bleeding into the sky; universe's is the same line inverted into a faint
+  // luminous rim, which is what gives a graphite card an edge at all.
+  ctx.strokeStyle = cardPalette().rim;
   ctx.lineWidth = 2;
   roundRect(ctx, 1, 1, W-2, H-2, 14);
   ctx.stroke();
@@ -84,13 +112,13 @@ function drawPlainPolaroid(ctx, memory, W, H) {
   drawPhotoOrPlaceholder(ctx, memory, photoArea);
 
   // caption area: title in handwritten-ish font + date
-  ctx.fillStyle = '#4a3b2a';
+  ctx.fillStyle = token('--card-text');
   ctx.font = '600 36px "Comic Sans MS", "Caveat", cursive, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   wrapText(ctx, memory.title || 'untitled memory', W/2, photoArea.y + photoArea.h + 60, W - 60, 42);
 
-  ctx.fillStyle = '#4a3b2a';
+  ctx.fillStyle = token('--card-text');
   ctx.font = '500 26px "Comic Sans MS", "Caveat", cursive, sans-serif';
   if (memory.date) {
     ctx.fillText(formatDate(memory.date), W/2, H - 28);
@@ -102,12 +130,16 @@ function drawPhotoOrPlaceholder(ctx, memory, area) {
   if (memory.type === 'photo' && memory.photoImg) {
     drawCover(ctx, memory.photoImg, area.x, area.y, area.w, area.h);
   } else {
-    // colored placeholder block based on type
-    const colors = { letter: '#ece1f5', audio: '#dceee6' };
-    ctx.fillStyle = colors[memory.type] || '#ece1f5';
+    // colored placeholder block based on type — themed so it keeps reading as
+    // an inset window in the mat rather than a bright panel stuck on top of a
+    // dark one (solar's blocks are slightly darker than the cream; universe's
+    // are the same two hues, darker than the graphite).
+    const paint = cardPalette();
+    const colors = { letter: paint.placeholderLetter, audio: paint.placeholderAudio };
+    ctx.fillStyle = colors[memory.type] || paint.placeholderLetter;
     ctx.fillRect(area.x, area.y, area.w, area.h);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = paint.placeholderIcon;
     ctx.font = '60px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -127,13 +159,14 @@ function drawCircularPhotoOrPlaceholder(ctx, memory, cx, cy, r) {
     drawCover(ctx, memory.photoImg, cx - r, cy - r, r * 2, r * 2);
     ctx.restore();
   } else {
-    const colors = { letter: '#ece1f5', audio: '#dceee6' };
-    ctx.fillStyle = colors[memory.type] || '#ece1f5';
+    const paint = cardPalette();
+    const colors = { letter: paint.placeholderLetter, audio: paint.placeholderAudio };
+    ctx.fillStyle = colors[memory.type] || paint.placeholderLetter;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = paint.placeholderIcon;
     ctx.font = '52px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -175,16 +208,19 @@ function drawMilestoneStarCard(ctx, memory, W, H) {
   const outerRx = 232, outerRy = 272;
   const innerRx = outerRx * 0.66, innerRy = outerRy * 0.66;
   const star = buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy);
+  const paint = cardPalette();
 
   ctx.save();
-  ctx.fillStyle = '#fffaf0';
+  ctx.fillStyle = token('--card-bg');
   ctx.fill(star);
   ctx.clip(star);
 
   // warm glow behind the photo so the star reads as "lit up", not just an
-  // outline, even out toward its points where the photo doesn't reach
+  // outline, even out toward its points where the photo doesn't reach. The
+  // milestone gold stays gold in both themes -- it says something about the
+  // memory, not about the surface -- so only its strength changes.
   const glow = ctx.createRadialGradient(cx, cy - 20, 30, cx, cy - 20, outerRy);
-  glow.addColorStop(0, 'rgba(255, 221, 150, 0.55)');
+  glow.addColorStop(0, paint.milestoneGlow);
   glow.addColorStop(1, 'rgba(255, 221, 150, 0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, W, H);
@@ -196,19 +232,19 @@ function drawMilestoneStarCard(ctx, memory, W, H) {
   const photoCx = cx, photoCy = cy - 70;
   drawCircularPhotoOrPlaceholder(ctx, memory, photoCx, photoCy, photoR);
 
-  ctx.strokeStyle = 'rgba(201, 154, 46, 0.85)';
+  ctx.strokeStyle = paint.milestoneRing;
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.arc(photoCx, photoCy, photoR, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.fillStyle = '#4a3b2a';
+  ctx.fillStyle = token('--card-text');
   ctx.font = '600 32px "Comic Sans MS", "Caveat", cursive, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   wrapText(ctx, memory.title || 'untitled memory', cx, photoCy + photoR + 54, 240, 36);
 
-  ctx.fillStyle = '#8a6a24';
+  ctx.fillStyle = paint.milestoneDate;
   ctx.font = '500 22px "Comic Sans MS", "Caveat", cursive, sans-serif';
   if (memory.date) {
     ctx.fillText(formatDate(memory.date), cx, cy + innerRy - 40);
@@ -218,12 +254,12 @@ function drawMilestoneStarCard(ctx, memory, W, H) {
 
   // gold double-border, echoing the old rectangular treatment but traced
   // along the star outline instead
-  ctx.strokeStyle = '#c99a2e';
+  ctx.strokeStyle = paint.milestoneLine;
   ctx.lineWidth = 9;
   ctx.stroke(star);
 
   const innerStar = buildStarPath(cx, cy, outerRx - 10, outerRy - 10, innerRx - 6, innerRy - 6);
-  ctx.strokeStyle = 'rgba(255, 217, 160, 0.7)';
+  ctx.strokeStyle = paint.milestoneInner;
   ctx.lineWidth = 3;
   ctx.stroke(innerStar);
 }
@@ -316,7 +352,13 @@ export function makeMoonSurfaceTexture({ color = '#ffd9a0', locked = false }) {
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
 
-  const [r, g, b] = locked ? LOCKED_TINT : hexToRgb(color);
+  /* The planet's accent arrives exactly as the user stored it and is re-aimed
+     here rather than in `data/` — themedAccent() is the identity function in
+     solar and a lightness clamp / saturation nudge in universe, so the twelve
+     pastels that were picked against a cream card still read as twelve
+     distinguishable colours against graphite and a near-black sky. Decision 4:
+     no second stored colour, no `data/` write, ever. */
+  const [r, g, b] = locked ? LOCKED_TINT : hexToRgb(themedAccent(color));
   const shade = (t, a = 1) => `rgba(${Math.min(255, Math.round(r * t))}, ${Math.min(255, Math.round(g * t))}, ${Math.min(255, Math.round(b * t))}, ${a})`;
 
   // base: poles a shade deeper than the equator
@@ -428,13 +470,14 @@ export function makeCardBackTexture(memory) {
   // Same tier-sized canvas and same reference space as the front — they are
   // two faces of one mesh (see the note at the top of this file).
   const { canvas, ctx, W, H } = makeCardCanvas();
+  const paint = cardPalette();
 
-  ctx.fillStyle = '#fffaf0';
+  ctx.fillStyle = token('--card-bg');
   roundRect(ctx, 0, 0, W, H, 14);
   ctx.fill();
 
   if (memory.milestone) {
-    ctx.strokeStyle = '#c99a2e';
+    ctx.strokeStyle = paint.milestoneLine;
     ctx.lineWidth = 8;
     roundRect(ctx, 4, 4, W-8, H-8, 14);
     ctx.stroke();
@@ -442,23 +485,25 @@ export function makeCardBackTexture(memory) {
     // Subtle echo of the front's star silhouette, not a full shape change --
     // the back is only seen edge-on mid-flip, so a small filled glyph reads
     // fine without redoing this side's geometry/clip to match the front.
-    ctx.fillStyle = '#c99a2e';
+    ctx.fillStyle = paint.milestoneLine;
     ctx.fill(buildStarPath(W / 2, 66, 26, 26, 10, 10));
   } else {
-    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+    ctx.strokeStyle = paint.rim;
     ctx.lineWidth = 2;
     roundRect(ctx, 1, 1, W-2, H-2, 14);
     ctx.stroke();
   }
 
-  ctx.fillStyle = '#4a3b2a';
+  ctx.fillStyle = token('--card-text');
   ctx.font = '600 42px "Comic Sans MS", "Caveat", cursive, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   wrapText(ctx, memory.title || 'untitled memory', W/2, H/2 - 6, W - 90, 50);
 
   if (memory.date) {
-    ctx.fillStyle = '#8a7a68';
+    // The same muted role the forms use for their secondary text, which in
+    // solar happens to be the identical hex this line used to hardcode.
+    ctx.fillStyle = token('--card-muted');
     ctx.font = '500 26px "Comic Sans MS", "Caveat", cursive, sans-serif';
     ctx.fillText(formatDate(memory.date), W/2, H/2 + 62);
   }

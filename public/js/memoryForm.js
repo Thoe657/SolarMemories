@@ -4,6 +4,7 @@
 import { addMemoryToScene, placeNewStar, updateMemoryInScene } from './scene.js';
 import { persistMemory, loadMemory } from './api.js';
 import { showStorageWarning, showToast } from './util.js';
+import { groupingName } from './theme.js';
 import { memories, currentPlanetId, storageMode, updateMemoryInState } from './state.js';
 
 const addOverlay = document.getElementById('addOverlay');
@@ -508,7 +509,14 @@ saveMemBtn.addEventListener('click', async () => {
     memory.moonId = saved?.moonId || null;
     const landedOn = await placeNewStar(memory);
     if (landedOn && !memory.mesh) {
-      showToast(`saved onto ${landedOn.name} — travel there through the portal ✦`);
+      /* The grouping's *displayed* name, not its stored one (Plan 4 Phase 2's
+         one leftover, deferred to Phase 5 rather than taking a sixth file).
+         Universe derives a nebula name from the moon's index, so the raw
+         record here would have sent someone looking for "Puck" while the
+         portal they were being pointed at, and the topbar above it, both said
+         "Eagle". Solar's groupingName() hands back landedOn.name untouched. */
+      const where = groupingName(landedOn.index, landedOn.name);
+      showToast(`saved onto ${where} — travel there through the portal ✦`);
     }
   } catch (e) {
     console.warn('Could not save memory', e);

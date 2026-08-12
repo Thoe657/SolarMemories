@@ -41,18 +41,30 @@ const OUT_DIR = path.join(__dirname, '..', 'public', 'assets', 'backgrounds');
 // "Vibrant" has a ceiling and it is written down here rather than in a log line.
 //
 // Criterion 2 says a content card holds a luminance contrast ratio of at least
-// ~3:1 against the sky behind it. The `solar` card is cream (#fffaf0, relative
-// luminance ~0.97) and is never the binding case. The `universe` card is a cool
-// graphite in the 0.20-0.30 range (Phase 5); take the bottom of that range,
-// because a ceiling derived from the darkest plausible card is the only one that
-// cannot be invalidated by Phase 5 picking a slightly darker graphite.
+// ~3:1 against the sky behind it. Each family is judged against the card that
+// is actually drawn in front of it: cream (#fffaf0) for solar, graphite
+// (#707688) for universe. Phase 3 shipped one global ceiling derived from the
+// graphite alone, which was fine while that card was assumed to be a 0.20
+// placeholder; once Phase 5 picked the real value the two ceilings straddle the
+// solar skies, and a single number would have failed nebula-1/2 for being too
+// bright for a card they never sit behind.
 //
 // Rearranging the WCAG-style ratio (L1 + 0.05) / (L2 + 0.05) >= 3 for the sky
-// gives the number the art has to stay under.
-const UNIVERSE_CARD_LUMINANCE = 0.20;   // darkest graphite Phase 5 may choose
+// gives the number each family's art has to stay under.
+//
+// UNIVERSE_CARD_LUMINANCE IS NOT A GUESS AND NOT A FLOOR ANY MORE — it is the
+// measured luminance of styles.css's `:root[data-theme="universe"] --card-bg`,
+// and the two must be changed together. Phase 5 pinned that hex between this
+// ceiling below it and WCAG AA for body text above it, with about one percent
+// of room between the two; the derivation is in theme.js beside the hex.
+const SOLAR_CARD_LUMINANCE = 0.9592;    // #fffaf0, the cream polaroid
+const UNIVERSE_CARD_LUMINANCE = 0.1818; // #707688, the graphite polaroid
 const MIN_CARD_SKY_CONTRAST = 3;        // plan-wide acceptance criterion 2
-const SKY_FIELD_LUMINANCE_CEILING =
-  (UNIVERSE_CARD_LUMINANCE + 0.05) / MIN_CARD_SKY_CONTRAST - 0.05;   // = 0.0333
+const cardLuminance = (family) =>
+  family === 'universe' ? UNIVERSE_CARD_LUMINANCE : SOLAR_CARD_LUMINANCE;
+const skyCeiling = (family) =>
+  (cardLuminance(family) + 0.05) / MIN_CARD_SKY_CONTRAST - 0.05;
+// solar 0.2864, universe 0.0273.
 
 // The ceiling binds on *field* luminance — the image box-averaged into
 // FIELD_BLOCK x FIELD_BLOCK cells — not on raw pixels. A card spans thousands of
@@ -365,16 +377,25 @@ const FAMILIES = {
 // `gain` scales that variant's nebula alphas, and exists because a hue rotation
 // is not luminance-neutral: green carries 0.7152 of relative luminance, so
 // rotating a blue palette a few degrees towards cyan makes the same alpha
-// measurably brighter. universe-2 came out at field p99 0.0387 against a 0.0333
-// ceiling for exactly that reason; 0.86 is what brings it back inside. Prefer
-// adjusting gain over re-rolling the seed — the seed is what makes the art
-// reproducible.
+// measurably brighter. universe-2 came out at field p99 0.0387 for exactly that
+// reason, against what was then a 0.0333 ceiling; 0.74 brought it to 0.0322 and
+// inside it. Prefer adjusting gain over re-rolling the seed — the seed is what
+// makes the art reproducible.
+//
+// Phase 5 took it down again, to 0.50. Not a tuning preference: once the
+// graphite card's real luminance was pinned (see the guard above), 0.0322 was a
+// sky no card could clear 3:1 while still carrying 4.5:1 body text — the two
+// requirements together need a sky at or under ~0.0278, and universe-2 was the
+// only variant of the six outside that. It now measures in line with its two
+// siblings instead of a fifth brighter than them, which the family reads better
+// for anyway. The ~0.007 of field luminance this gave up is the price of the
+// phase's binding acceptance criterion.
 const VARIANTS = [
   { family: 'solar',    index: 1, seed: 0x501a2101, hue: 0,   tilt: -7,  gain: 1 },
   { family: 'solar',    index: 2, seed: 0x501a2202, hue: -14, tilt: 5,   gain: 1 },
   { family: 'solar',    index: 3, seed: 0x501a2303, hue: 17,  tilt: -13, gain: 1 },
   { family: 'universe', index: 1, seed: 0x01ce3401, hue: 0,   tilt: -11, gain: 1 },
-  { family: 'universe', index: 2, seed: 0x01ce3502, hue: -12, tilt: 8,   gain: 0.74 },
+  { family: 'universe', index: 2, seed: 0x01ce3502, hue: -12, tilt: 8,   gain: 0.50 },
   { family: 'universe', index: 3, seed: 0x01ce3603, hue: 15,  tilt: -4,  gain: 1 },
 ].map((v) => ({ ...v, name: `${FAMILIES[v.family].prefix}-${v.index}` }));
 
@@ -487,8 +508,9 @@ function measure(canvas) {
 // Contrast of a card of luminance `l` against a sky patch of luminance `s`.
 const contrast = (l, s) => (Math.max(l, s) + 0.05) / (Math.min(l, s) + 0.05);
 
-function reportGuard(name, m) {
-  const pass = m.fieldP99 <= SKY_FIELD_LUMINANCE_CEILING;
+function reportGuard(name, family, m) {
+  const ceiling = skyCeiling(family);
+  const pass = m.fieldP99 <= ceiling;
   if (!pass) process.exitCode = 1;
   if (!m.opaque) { console.log(`${name}: NOT OPAQUE — do not ship`); process.exitCode = 1; }
   console.log(
@@ -496,10 +518,9 @@ function reportGuard(name, m) {
     + `  lum p99 ${m.p99.toFixed(4)} (raw, star-dominated)`
   );
   console.log(
-    `  ${''.padEnd(11)} field p99 ${m.fieldP99.toFixed(4)} / ceiling ${SKY_FIELD_LUMINANCE_CEILING.toFixed(4)}`
+    `  ${''.padEnd(11)} field p99 ${m.fieldP99.toFixed(4)} / ${family} ceiling ${ceiling.toFixed(4)}`
     + `  field max ${m.fieldMax.toFixed(4)}`
-    + `  graphite card ${contrast(UNIVERSE_CARD_LUMINANCE, m.fieldP99).toFixed(2)}:1`
-    + `  cream card ${contrast(0.97, m.fieldP99).toFixed(1)}:1`
+    + `  its own card ${contrast(cardLuminance(family), m.fieldP99).toFixed(2)}:1`
     + `  ${pass ? 'PASS' : 'OVER CEILING'}`
   );
 }
@@ -583,12 +604,14 @@ async function reencode(variants) {
 
 async function redraw(variants) {
   console.log(
-    `ceiling: field luminance p99 <= ${SKY_FIELD_LUMINANCE_CEILING.toFixed(4)}`
-    + ` (${MIN_CARD_SKY_CONTRAST}:1 against a ${UNIVERSE_CARD_LUMINANCE} graphite card)\n`
+    `ceilings: field luminance p99 <= ${skyCeiling('solar').toFixed(4)}`
+    + ` for solar (${MIN_CARD_SKY_CONTRAST}:1 against the ${SOLAR_CARD_LUMINANCE} cream card),`
+    + ` <= ${skyCeiling('universe').toFixed(4)} for universe`
+    + ` (against the ${UNIVERSE_CARD_LUMINANCE} graphite one)\n`
   );
   for (const variant of variants) {
     const canvas = renderVariant(variant);
-    reportGuard(variant.name, measure(canvas));
+    reportGuard(variant.name, variant.family, measure(canvas));
 
     const png = canvas.toBuffer('image/png', { compressionLevel: 9 });
     fs.writeFileSync(path.join(OUT_DIR, `${variant.name}.png`), png);
