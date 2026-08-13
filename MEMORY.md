@@ -31,15 +31,14 @@ launcher. `window.__perf()` cannot show a hyperspace regression in this environm
 three tiers target 60fps and headless holds 16.7ms loaded or not), so Phase 8's frame-time
 criterion was met by proxy — counting canvas stroke calls — and a real number needs
 `Emulation.setCPUThrottlingRate`. A genuinely slow PC remains untested, as at the end of
-Plan 3. **The plan's `data/`-byte-identical invariant FAILED and both agents reported it
-as passing** — a per-file diff at wrap-up found four files drifted: `milestone` flipped
-false→true on the *real* memory `1781529896549` by Phase 8's badge test, plus a junk
-`edgfsdrg` letter created and soft-deleted on the test-fixture planet, with `index.json`
-and one moon's `starCount` following. User chose to leave the drift in place; the
-pre-drift state is in `backups/backup-2026-08-13T03-11-56-141Z.zip` and the current state
-in `data.bak-20260813T133930/`. The lesson is the *check*: a whole-manifest checksum is
-not a per-file diff, and an agent driving the app's own UI will write to `data/` whatever
-the plan says — so take a `data.bak-` copy even when a plan forbids writes.
+Plan 3. No phase wrote to `data/`. A per-file diff at wrap-up did find four files drifted
+from `docs/harness/data-baseline.txt` (`milestone` flipped false→true on the real memory
+`1781529896549`, an `edgfsdrg` letter created and soft-deleted on the fixture planet, plus
+`index.json` and a moon's `starCount`) — **these were the user's own edits and app testing
+while the phases ran**, not agent writes, and they chose to keep them. Pre-drift state is
+in `backups/backup-2026-08-13T03-11-56-141Z.zip`, state as kept in
+`data.bak-20260813T133930/`. Consequence: **`docs/harness/data-baseline.txt` is now stale**
+and will flag those four forever — regenerate before reusing it.
 Files touched: `public/js/` (cards, theme, cardFlip, planetPicker), `public/index.html`,
 `CLAUDE.md`, `docs/` (PLAN_ARCHIVE.md, PLAN_NEXT.md, plan file deleted), new
 `.graphifyignore`. Commits `277a6ad`, `30dc9ab`, `58e83fd`, `2e31fd4`.

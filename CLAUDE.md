@@ -431,18 +431,17 @@ path at startup and the seeded records landed in the real `data/` anyway. Take t
 `data.bak-<timestamp>/` copy before any phase that writes to `data/` — that's what made
 that mishap recoverable.
 
-**Take that copy even when the plan says it writes nothing, and verify with a per-file
-diff, not a manifest checksum.** Plan 4 forbade all `data/` writes, declared no backup
-necessary on the strength of that, and its Phase 8 and Phase 9 agents both certified
-`data/` byte-identical. It wasn't: a per-file comparison at wrap-up found `milestone`
-flipped false→true on a *real* memory by a card-rendering test, a junk letter created and
-soft-deleted on the fixture planet, and `index.json` plus a moon's `starCount` following
-along. Two failure modes worth separating — **an agent exercising the app through its own
-UI writes to `data/` however emphatically the plan forbids it**, and **a whole-directory
-checksum compared against a remembered value is not the same test as diffing each file
-against `docs/harness/data-baseline.txt`**. The startup zip in `backups/` is what made
-this one recoverable; regenerate the baseline with
-`find data -type f | sort | xargs sha256sum`.
+**A `data/` baseline only means anything if the app isn't being used at the same time.**
+Plan 4 forbade all `data/` writes and held to it, but a per-file diff at its wrap-up still
+found four files drifted from `docs/harness/data-baseline.txt` — `milestone` flipped on a
+real memory, a test letter created and soft-deleted on the fixture planet, plus
+`index.json` and a moon's `starCount`. Those were the **user's own edits while the phases
+ran**, not agent writes. Two things follow. **`docs/harness/data-baseline.txt` is stale as
+of 2026-08-13** and will report those four as drift until regenerated with
+`find data -type f | sort | xargs sha256sum`. And a whole-directory checksum can only say
+*"something changed"* — to tell a real regression from ordinary use you need a per-file
+diff plus attribution of each difference, so prefer that whenever the answer matters. The
+startup zips in `backups/` are what make either kind recoverable.
 
 **Renaming code without renaming data is its own hazard.** Phase 11 briefly had the
 code's `PLANETS_DIR` constant (meant for the new top-level records) pointing at the same
