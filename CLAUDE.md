@@ -91,6 +91,11 @@ Useful URLs (Plan 3 Phase 1, both no-ops without the query param):
 - `node scripts/perf-report.js` prints per-planet star count, payload bytes and how many
   of those are media, from `data/` alone — read-only, no server. Answers "what does
   entering this planet cost" without a browser.
+- `node scripts/plan-phase.js <n>` prints one phase of `docs/PLAN.md` — preamble (which
+  carries the zero-write baseline hash) plus that phase plus only the Risks bullets that
+  name it. `--list` shows every phase with its sliced token estimate, `--file <plan.md>`
+  targets another plan, `--no-preamble` trims further. Read-only. **This is how a phase
+  spec reaches a subagent** — see the delegation rule under "Development plan".
 
 ## Verifying changes cheaply
 
@@ -515,9 +520,11 @@ brainstorm/discuss before turning any item there into a real phase; don't treat 
 pre-approved.
 
 [docs/PLAN.md](docs/PLAN.md) is reused as the spec for whichever plan is currently
-active. **Nothing is active right now** — it was reset when Plan 3 landed and Plan 4 ran
-from its own file, since deleted. Don't mistake an empty `PLAN.md` for there being no
-project history; it's all in `PLAN_ARCHIVE.md`.
+active. **It currently holds Plan 5, "Polish pass on the universe theme" — nine phases,
+scoped and grilled, not started.** (Plan 4 ran from its own file, since deleted; `PLAN.md`
+was empty between the two, which is what this line used to say.) A plan that has landed is
+condensed into `PLAN_ARCHIVE.md`, so an empty `PLAN.md` never means there is no project
+history.
 
 The ground rules below (applied throughout all three completed plans) are worth reusing
 whenever an item from PLAN_NEXT.md — or any other new structural/feature work — gets
@@ -527,6 +534,12 @@ scoped into a real plan:
   dropped starting with the "Galaxy scaling" plan). Don't combine phases or skip ahead.
 - Restate the phase's plan and file list before writing code; stop and ask if anything is
   ambiguous, especially anything touching `data/`.
+- **Hand a delegated phase its spec inline — never point a subagent at `PLAN.md`.** Paste
+  `node scripts/plan-phase.js <n>` into the Agent prompt. A whole plan is ~8,600 tokens and
+  a slice averages ~1,430 (83% smaller), and the subagent then needs no Read to know its
+  job. This is not a micro-optimisation: a transcript audit on 2026-08-13 found Read is 53%
+  of all context material, and Plan 4's spec alone cost ~226k tokens of re-reading because
+  nine subagents each read the whole file to find their own section.
 - Any phase that writes to `data/` must first copy it to `data.bak-<timestamp>/`.
 - After each phase — not after each edit — run `npm start`, manually exercise the affected
   behavior, and report what was actually tested. Do it the cheap way described under
@@ -540,7 +553,14 @@ This project has a knowledge graph at graphify-out/ with god nodes, community st
 
 Rules:
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- **No wiki is generated in this repo** — `graphify-out/wiki/` does not exist, so don't go
+  looking for it. Use `query`/`explain` for navigation instead.
+- **Use the graph to aim a partial read, not to skip reading.** A query is ~330 tokens
+  against a ~2,500-token whole-file Read, but Edit requires having Read what it changes, so
+  the graph cannot replace the read — it tells you *which lines*, and then `Read` with
+  `offset`/`limit` around them. That combination is what actually cuts context depth; on
+  2026-08-13 the ~100k-token corpus had been re-read roughly 14× over (`scene.js`, 27k
+  tokens, was read for 275k).
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
   A `post-commit` hook (`graphify hook install`) already does this automatically for code
