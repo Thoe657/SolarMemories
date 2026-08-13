@@ -17,6 +17,27 @@ orbiting it should be planets, and their star-groupings should be moons of those
 planets. This also retired Phase 1's "world" workaround: the picker's own icons had
 borrowed that name only because "planet" was taken by the star-groupings at the time.)
 
+**Two themes, since Plan 4.** `solar` is the default and is the app described above.
+`universe` is a skin: identical hierarchy, structure and data, different appearance and
+vocabulary. It is **presentation only** — no new record types, no new fields, no
+migration; the internal words (`planet`, `moon`, `planetId`, `moonId`) are unchanged in
+the code, the API and `data/`.
+
+| concept | `solar` (default) | `universe` (skin) |
+|---|---|---|
+| maddi | the sun | the centre of the universe (no noun on screen — her label is her name, in both) |
+| a person | planet | galaxy |
+| a grouping of ≤28 | moon | nebula |
+| a memory | star | star |
+| a milestone memory | star-cutout card | comet-cutout card |
+| navigation portal | a world you travel to | a black hole with an accretion ring |
+| picker layout | concentric rings, orbiting | a static two-armed spiral |
+| content surfaces | warm cream (`#fffaf0`) | cool graphite (`#707688`) |
+| sky family | `nebula-{1,2,3}.webp` | `universe-{1,2,3}.webp` |
+
+The *world* is near-black in both — the sky doesn't get darker. What changes is the
+content surfaces: the polaroid face, the read/flip panel, the forms.
+
 ## Commands
 
 ```bash
@@ -31,6 +52,10 @@ Useful URLs (Plan 3 Phase 1, both no-ops without the query param):
 - `?quality=high|medium|low` — forces a quality tier at load, bypassing the benchmark and
   any persisted verdict. Needed to exercise the low path on a fast machine, and the only
   way to get `antialias: false` (it is fixed at renderer construction).
+- `?theme=solar|universe` (Plan 4 Phase 1) — forces a theme at load. **Unlike `?quality=`
+  it also persists**: a themed link is a way to switch, not just to peek. Precedence is
+  `?theme=` > stored preference > `solar`. The theme is fixed for the life of the page
+  (see the theme notes below), so this is the only way to change it mid-session.
 
 - There is no lint script and no test suite (`npm test` is a stub that errors).
 - `./start.command` is the packaged launcher: it runs `./node/node server.js` using a
@@ -50,11 +75,19 @@ Useful URLs (Plan 3 Phase 1, both no-ops without the query param):
   data migration (`galaxy` → `planet`, old `planet` → `moon`, both the directory layout
   and the `galaxyId`/`planetId` fields on every record); already run for real against
   this install's data. Only relevant again if restoring from a pre-Phase-11 backup.
-- `node scripts/build-backgrounds.js --reencode` converts the sky PNGs already on disk to
-  the lossless WebP the app actually loads. **Running it without `--reencode` redraws the
-  art from scratch and does not reproduce the skies on disk** — the routine is seeded by
-  `Math.random()`, so a plain run invents new ones. Requires the `canvas` and `sharp`
-  devDependencies (native, neither needed by `npm start`).
+- `node scripts/build-backgrounds.js [family|variant] [--reencode]` regenerates the sky
+  art. **The art is deterministic as of Plan 4 Phase 3** — every random number comes from
+  a mulberry32 PRNG seeded per variant, so a plain run reproduces the files on disk
+  byte-for-byte and the sky can be *re-tuned* by editing numbers rather than only
+  replaced. (Before Phase 3 it used `Math.random()` and a plain run invented new skies;
+  that trap is gone, and so is the `--reencode`-only workflow it forced.) A bare run
+  redraws all six variants; passing `solar`, `universe`, or a single name like
+  `universe-2` narrows it. `--reencode` still exists to re-encode the PNGs already on
+  disk to WebP without redrawing — useful only for changing the encoder options. The
+  script prints the numeric contrast guard per variant and **exits non-zero if one misses
+  its ceiling**. Requires the `canvas` and `sharp` devDependencies (native, neither needed
+  by `npm start`). Both PNG and WebP are written; `scene.js` loads the WebP, and the PNGs
+  stay as the lossless source the re-encode reads.
 - `node scripts/perf-report.js` prints per-planet star count, payload bytes and how many
   of those are media, from `data/` alone — read-only, no server. Answers "what does
   entering this planet cost" without a browser.
@@ -83,6 +116,26 @@ compromising the project. In practice:
   region in question over another full-frame capture.
 - Prefer scoped `read_page` (`ref_id`/`depth`/`filter: interactive`) over a full tree
   dump, for the same reason.
+
+**The Browser pane does not composite frames in these sessions** — `visibilityState` is
+permanently `hidden`, `requestAnimationFrame` is suspended, and `computer screenshot`
+fails, so `window.__perf()` only ever reads `paused: true` / 0 draw calls through it.
+This has been true across all four plans. The working method, and now the default:
+`npm start` on port 3000, then drive **headless Chrome over CDP** (`--headless=new`,
+1280x800) from a throwaway Node script in the scratchpad. That gives a visible document,
+a ticking render loop, real `__perf()` numbers and working screenshots. Two traps worth
+knowing: `document.querySelector('canvas')` returns the **entry** canvas, not the
+renderer's (use `#scene-container canvas`), and `getMeshScreenRect` reads a stale
+`modelViewMatrix` on a frustum-culled mesh — so drive the camera **analytically** from
+`scene.js`'s own constants (`targetYaw -= dx * 0.004`) rather than searching for a
+heading.
+
+**A captured screenshot only costs tokens when it is *read*.** Capture freely; decode
+with the `sharp` devDependency in Node and answer the question as a number. Luminance,
+contrast ratios, radial profiles, "did this render at all", pixel-identity between two
+builds — all numeric. Reserve actually looking at an image for questions that are
+irreducibly about perception ("does this read as a black hole", "would a stranger see two
+modes"), and crop to the region in question before doing so.
 
 ## Architecture
 
@@ -148,6 +201,10 @@ imports; also owns the card-texture LRU, the frame-callback registry and the rol
 frame-time sampling that asks `quality.js` to step the tier down — see below),
 `quality.js` (the quality tier: the tier table as data, precedence resolution, and
 `localStorage` persistence — imported by `scene.js` so it resolves first),
+`theme.js` (the theme registry — two entries, each with a label map, sky asset family,
+colour tokens, the nebula-name pool and feature flags; exports `currentTheme()`,
+`setTheme()`, `label()`, `tokens()`, `themeFlag()`, `applyLabels()`. Modelled on
+`quality.js` and, like it, must not import `scene.js`),
 `perfHud.js` (the `?perf=1` readout and `window.__perf()`; dynamically imported by
 `main.js` only when that param is present, so a normal load never fetches it),
 `planetPicker.js`
@@ -214,7 +271,70 @@ Perf/asset notes (mostly Plan 3 — these are load-bearing and easy to undo by a
   and `/lib` are served `immutable`; everything that changes in place is not, so editing
   a module and reloading still shows the edit.
 - The one external host left is Google Fonts (`styles.css:1`). The app loads and renders
-  offline but falls back to system type; self-hosting is filed in PLAN_NEXT.md.
+  offline but falls back to system type; self-hosting is filed in PLAN_NEXT.md. (Verified
+  in Plan 4 Phase 9 by black-holing `fonts.googleapis.com`/`fonts.gstatic.com` at the
+  resolver: both themes load and render with 0 console errors and 0 loaded font faces.)
+
+Theme notes (Plan 4 — same status as the perf notes above: load-bearing, easy to undo):
+
+- **The theme is fixed at load and must stay that way.** `setTheme()` stores a preference
+  and does *not* repaint; `currentTheme()` is stable for the life of the page. Re-theming
+  live would mean regenerating every card texture, reloading the sky and rebuilding the
+  portals mid-session. The useful consequence is that a session's texture cache can never
+  hold two themes' cards, which is why the LRU key is the bare `memory.id` with **no**
+  theme component — correct, not an oversight.
+- **`data-theme` is set by a three-line inline `<script>` in `<head>`**, above the
+  stylesheet. That is the one justified exception to `index.html` being markup-only: a
+  module import runs too late and the app would flash cream before going dark.
+- **`cards.js` reads its colours from `theme.js` and must never re-hardcode them.** It
+  used to hold literal copies of the same hexes the CSS variables held; the canvas half of
+  dark mode is entirely "stop doing that". A new fill or stroke goes through `tokens()`.
+- **The `universe` palette window is about one percent wide.** Card `#707688` (L 0.1818)
+  and pure-white text are load-bearing to two decimals: they are the only pair satisfying
+  both binding criteria at once (body text 4.53:1 above the card, card 3.02–3.07:1 above
+  the sky). The two bounds multiply, so the sky-to-white span must be ≥ 3 × 4.5 = 13.5:1.
+  The algebra is written beside the hex in `theme.js`. **Do not casually retune either
+  value** — and `build-backgrounds.js`'s `UNIVERSE_CARD_LUMINANCE` is the *measured*
+  luminance of that same hex, so the two change together or not at all.
+- **`build-backgrounds.js`'s contrast guard is per-family** (cream 0.9592 / graphite
+  0.1818), because a single ceiling derived from the graphite card would fail the *solar*
+  skies for being too bright for a card they never sit behind. It binds on **field p99** —
+  the image box-averaged into 128px cells, which is card scale — not on raw pixels, since
+  a 3px star cannot out-shout a card however bright that one pixel is.
+- **The spiral's arms and its planet placement share one winding constant.** `ARM_WINDING`
+  is declared once in `planetPicker.js` and read by both the placement formula
+  (`θ = (idx/count)*360 + ring*23 + ARM_WINDING * radius`) and the arm path. Arms baked
+  into an image, or drawn from a second constant, would drift off the planets. Related:
+  **the arms are broad because of algebra, not taste** — the winding term cancels between
+  a planet and an arm centre, so "is this planet on an arm" depends on base angles alone,
+  and ring 3's four planets sitting 90° apart force a 90° occupied span against a two-arm
+  180° period. Don't narrow the arms to make them prettier; the planets will fall off.
+- **`universe` portals are unlit billboards, so the `PointLight` constraint is `solar`
+  only.** The three lights still exist in both themes (making the rig conditional would
+  put a second theme branch on renderer setup for nothing), but in `universe` they
+  illuminate nothing — the one `MeshLambertMaterial` in the app is solar's portal sphere.
+  See the portal section below.
+- **The hyperspace colour *count* must stay fixed.** Streaks batch into
+  `` `${color}|${width}` `` buckets against 7 quantised widths, so the ceiling is 5×7=35
+  on a moon jump. Retinting is free; adding a sixth colour is ~20% more stroke calls a
+  frame at the app's most performance-sensitive moment. `HYPERSPACE_PALETTES` holds the
+  colours per theme; the presets hold the effect's *shape*, identical in both.
+- **The comet's head radius comes from `innerRx` alone**, never `innerRy`, or the circular
+  photo medallion inside it stops being circular. Its tail edges bow *inward*; bowed
+  outward the shape reads as a fat teardrop.
+- **Anything static built on `Math.random()` in the picker will reshuffle.**
+  `renderSolarSystem()` re-runs on every create, delete and return from a planet. Solar's
+  moon dots get away with a random start phase only because they are moving; the
+  `universe` halo derives its angle (golden angle) instead.
+- **Nebula names are derived, not stored** — a pool of 28 mapped deterministically off
+  `moon.index` (index 0 is always Orion), mirroring `lib/moonNames.js`'s 28. Ordered
+  rather than randomly picked because the name is computed at render time on every load.
+  Accepted trade: the same grouping shows two different names in the two themes. Nothing
+  is written to `data/`; the moon's stored name is what `solar` still shows.
+- **Gating new motion on `currentTier() !== 'low'` covers `prefers-reduced-motion` for
+  free**, because that query forces the low tier through `quality.js`'s precedence chain —
+  but it must be re-applied inside an `onTierChange` callback, or a mid-session downgrade
+  leaves the animation running.
 
 Data schema:
 - planet: `{ id, name, accentColor, ring (1-3), deletedAt, createdAt }`
@@ -234,23 +354,47 @@ moon. Anything counting what's *on screen* must use `scene.js`'s `renderedStarCo
 not `memories.length`.
 
 Navigating between moons (Phase 4) goes through `scene.js`'s `showMoon(index)`, which
-rebuilds the ring's meshes and leaves `memories` alone. The two portals are whole worlds
-hanging 26 units out at ±100° and ~20° of elevation — a lit `MeshLambertMaterial` sphere,
-an atmosphere shell, and a caption plate beside it — each a `THREE.Group` under
-`portalGroup`, outside `cardGroup`, so ring slot indexing and `renderedStarCount()` keep
-counting stars only. The `pointerup` raycast collects the visible portals' sphere and
-caption meshes alongside `cardGroup.children` and routes portal hits to
-`setOnPortalClick`'s callback (wired up in `planetPicker.js`, which owns the hyperspace
-transition). A "next" portal with no successor moon renders as a grey, padlocked ghost
-of a world and does nothing but swell when clicked.
+rebuilds the ring's meshes and leaves `memories` alone. The two portals hang 26 units out
+at ±100° and ~20.5° of elevation, each a `THREE.Group` under `portalGroup`, outside
+`cardGroup`, so ring slot indexing and `renderedStarCount()` keep counting stars only.
+**The body branches by theme at construction** (they are built once for the life of the
+page — moon changes only swap maps and visibility — so there is no teardown path to lean
+on and nothing unused is allocated):
 
-Two things about the portals are load-bearing and easy to undo by accident. Their light is
-a `PointLight` above the viewer, not a directional one: both portals hang off to the
-sides, and any single direction leaves one of them a black disc. And the caption sits
-*beside* its moon because it doesn't fit above or below — the clear sky between the top
-row of stars (~13.7° elevation) and the top of the 55° FOV (27.5°) is only ~14° tall, and
-the moon nearly fills it; above puts the caption off-screen, below puts it behind the
-card ring.
+- `solar` — a whole world: a lit `MeshLambertMaterial` sphere plus a `BackSide` atmosphere
+  shell, with a caption plate beside it. A locked one is a grey, padlocked ghost at 0.72
+  opacity.
+- `universe` — an unlit `MeshBasicMaterial` billboard on a *square* plane carrying a black
+  hole and its accretion ring, both painted into the texture. No sphere and no halo are
+  allocated at all. A locked one keeps the event horizon, loses the accretion ring
+  entirely, and stays fully opaque: the ring is what marks a real one, so its absence is a
+  better sentence than "greyed out".
+
+The `pointerup` raycast collects the visible portals' body and caption meshes alongside
+`cardGroup.children` and routes portal hits to `setOnPortalClick`'s callback (wired up in
+`planetPicker.js`, which owns the hyperspace transition). It maps a hit to its portal by
+`userData.portal` (a string), not by parent traversal, and `intersectObjects` is
+non-recursive — so **any new clickable mesh must carry `userData.portal` *and* be added to
+the candidate list**. Solar's `halo` is excluded on purpose: a `BackSide` shell would
+swallow clicks in front of the body. A "next" portal with no successor moon does nothing
+but swell when clicked, and that swell is the *only* feedback the click was heard.
+
+Three things about the portals are load-bearing and easy to undo by accident:
+
+- **The light is a `PointLight` above the viewer, not a directional one** — both portals
+  hang off to the sides, and any single direction leaves one of them a black disc. **This
+  applies to `solar` only from Plan 4 Phase 7 on**: a billboard has no unlit hemisphere to
+  leave in shadow, and solar's sphere is the app's only non-`Basic` material.
+- **The caption sits *beside* its body**, because it doesn't fit above or below — the
+  clear sky between the top row of stars (~13.7° elevation) and the top of the 55° FOV
+  (27.5°) is only ~14° tall and the body nearly fills it; above puts the caption
+  off-screen, below puts it behind the card ring. The side offset is measured off the
+  geometry, not the radius constant, because the two themes' bodies are different widths.
+- **Portal textures are deliberately outside the 64-entry LRU.** `textureInUse()` only
+  scans `cardGroup.children`, so a portal texture in that cache could be disposed while
+  still bound to a live material. They use a fresh `CanvasTexture` per call with the old
+  one disposed inline by `setPortalAppearance`. A *shared/static* black-hole texture would
+  be destroyed by those unconditional disposes on the first moon jump.
 
 Ring layout (`ringSlot`/`applyRingLayout` in `scene.js`) is a function of how many stars
 are in the ring, not of arrival order, so everything is re-spaced whenever that count
@@ -320,7 +464,7 @@ is still running — stop it first, and if the worktree registration is left beh
 
 ## Development plan
 
-Three plans are complete and merged to `main`, condensed in
+Four plans are complete and merged to `main`, condensed in
 [docs/PLAN_ARCHIVE.md](docs/archive/PLAN_ARCHIVE.md): Plan 1, phases 0–14 (file
 structure split, validation, per-record storage, archive-not-delete, backups, and a run
 of feature/perf phases), and Plan 2, "Galaxy scaling — stars & planets," phases 1–12
@@ -341,14 +485,26 @@ when measured** — the fairy lights were never ~240 draw calls (frustum culling
 the corrections are recorded per phase in the archive, and are worth reading before
 trusting any perf claim written down here.
 
+Plan 4, "The universe theme & a richer deep space," phases 1–9, is **complete and merged
+to `main`**, in the same archive. It shipped the `universe` skin (theme registry, themed
+label vocabulary, derived nebula names, dark content surfaces, static spiral picker,
+black-hole portals, comet milestones, retinted hyperspace) and a universal background
+overhaul (two deterministic sky families, mean chroma 0.021 → 0.068–0.111, a numeric
+per-family contrast guard). It wrote **nothing** to `data/` in nine phases — verified
+byte-identical throughout — and its own risk model was wrong twice in ways worth reading:
+Phase 6's viewport-drift risk was structurally absent, and Phase 3's "reads flat" was
+near-total absence of colour rather than insufficient detail.
+
 [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md) lists candidate future work (PWA/service worker,
-native macOS packaging, entry-screen Exit button, PIN/passcode lock, PDF keepsake
-export, manual card reordering) that is **not yet scoped** — brainstorm/discuss before
-turning any item there into a real phase; don't treat it as pre-approved.
+native macOS packaging, entry-screen Exit button, PIN/passcode lock, PDF keepsake export,
+manual card reordering, self-hosting the two web fonts, a moving comet object, hyperspace
+lensing, plus two gaps Plan 4's sweep found) that is **not yet scoped** —
+brainstorm/discuss before turning any item there into a real phase; don't treat it as
+pre-approved.
 
 [docs/PLAN.md](docs/PLAN.md) is reused as the spec for whichever plan is currently
-active. **Nothing is active right now** — it was reset when Plan 3 landed, and the next
-scoped plan replaces its contents. Don't mistake an empty `PLAN.md` for there being no
+active. **Nothing is active right now** — it was reset when Plan 3 landed and Plan 4 ran
+from its own file, since deleted. Don't mistake an empty `PLAN.md` for there being no
 project history; it's all in `PLAN_ARCHIVE.md`.
 
 The ground rules below (applied throughout all three completed plans) are worth reusing

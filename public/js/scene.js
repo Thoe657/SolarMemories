@@ -1,6 +1,7 @@
 /* ============================================================
    THREE.JS SETUP — renderer/camera/lights/background/animate loop
-   (relies on the global THREE from the CDN <script> tag)
+   (relies on the global THREE set by index.html's <script src="lib/three.min.js">,
+   vendored locally since Plan 3 Phase 7 — there is no CDN in this app)
 ============================================================ */
 import {
   makePolaroidTexture,
