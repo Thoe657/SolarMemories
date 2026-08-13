@@ -545,18 +545,33 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
   A `post-commit` hook (`graphify hook install`) already does this automatically for code
-  changes; docs are not covered by the hook and need a manual update.
+  changes; docs are not covered by the hook and need a manual update. **The hook exits early
+  inside a git worktree** (it bails when `--git-dir` differs from `--git-common-dir`), so
+  commits made from a worktree never rebuild the graph — only commits from the main checkout
+  do. `graphify-out/` lives in the main checkout and is gitignored.
 
-**The corpus deliberately excludes `public/lib/three.min.js` and `public/assets/backgrounds/*`.**
-A plain `/graphify .` re-includes both and ruins the graph — don't run one without re-applying
-the exclusions. The first build (2026-08-12) did include them, and three.min.js alone was 76%
-of nodes and 77% of edges while sharing **zero** edges with app code: a disjoint blob of
-minified identifiers (`We`, `jn`, `ke`) that swamped every god node, community hub and
-suggested question. Its names are mangler output, so nothing in it is searchable or
-actionable, and it is pinned (`three: 0.160.0`) and vendored on purpose — there is nothing
-to refactor there. The nebula PNGs/WebPs are procedural art and cost vision tokens to
-describe as "purple nebula". Excluding both took the graph from 2103 nodes / 136 communities
-(65 too thin to report) to 568 / 24 (none thin).
+**The corpus deliberately excludes `public/lib/three.min.js` and `public/assets/backgrounds/*`,
+and `.graphifyignore` at the repo root is what enforces it.** The first build (2026-08-12) did
+include them, and three.min.js alone was 76% of nodes and 77% of edges while sharing **zero**
+edges with app code: a disjoint blob of minified identifiers (`We`, `jn`, `ke`) that swamped
+every god node, community hub and suggested question. Its names are mangler output, so nothing
+in it is searchable or actionable, and it is pinned (`three: 0.160.0`) and vendored on purpose —
+there is nothing to refactor there. The nebula PNGs/WebPs are procedural art and cost vision
+tokens to describe as "purple nebula".
+
+Those exclusions were applied *by hand* on the first build, so the post-commit hook's plain
+rebuild re-ingested both and kept doing so on every commit — the graph had drifted back to
+2252 nodes / 113 communities before `.graphifyignore` landed (2026-08-13). **Don't go back to
+hand-applied exclusions.** `.graphifyignore` is a first-class graphify mechanism, parsed per
+gitignore spec and honoured by the hook's rebuild path (`watch.py`), which evicts matches on
+every rebuild — verified by forcing a full rebuild with both excluded paths named as changed
+files and getting zero nodes from either. It is *not* a git ignore: both paths stay tracked.
+
+**Current clean baseline: 651 nodes / 1295 edges / 38 communities / 35 files** (3 communities
+too thin to report), as of 2026-08-13. The older "568 / 24 (none thin)" figure was the
+2026-08-12 build and is superseded — the graph grew legitimately over Plan 4 (`theme.js`,
+`perfHud.js`, and the rest). Compare against 651 / 38, not 568 / 24, before concluding the
+corpus has drifted again.
 
 `CLAUDE.md`, `MEMORY.md`, `README.md` and `index.html` **are** in the corpus, and that is the
 point: the rationale in this file is linked to the symbols it explains, so a query for e.g.
