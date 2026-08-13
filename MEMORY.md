@@ -1,5 +1,41 @@
 # Session log
 
+## 2026-08-13 — Plan 4 complete: the universe theme & a richer deep space (phases 1-9)
+Completed: Finished Plan 4's last two phases and swept it. Phase 8 gave milestone cards a
+comet cutout in `universe` (a `buildCometPath` sharing `buildStarPath`'s six-parameter
+signature, so all three call sites take either builder), themed the `✦ milestone` badge to
+`☄︎`, and retinted hyperspace via a theme-keyed palette table. Phase 9 discharged Phase 7's
+outstanding portal check, ran both themes across all three tiers on six surfaces, confirmed
+the three plan-wide criteria, folded the plan into `PLAN_ARCHIVE.md` and rewrote CLAUDE.md.
+Separately, restored the graphify corpus exclusions as a committed `.graphifyignore` and
+re-extracted the graph.
+Decisions: The hyperspace colour *count* is fixed at 1 (planet) / 5 (moon) per theme —
+streaks batch into `${color}|${width}` buckets against 7 quantised widths, so retinting is
+free but a sixth colour is ~20% more stroke calls at the app's most performance-sensitive
+moment. The comet's head radius comes from `innerRx` alone or the circular photo medallion
+stops being circular, and its tail edges bow *inward* (bowed outward it reads as a fat
+teardrop). Phase 7's disc was proven by driving the camera yaw **analytically** from
+`scene.js`'s own constants rather than searching for a heading — `getMeshScreenRect` reads a
+stale `modelViewMatrix` on a frustum-culled mesh, which is what made three earlier search
+loops settle at the wrong yaw. Phase 5's flagged question (does runtime star density near
+the ring want trimming?) was measured and answered **no**: hiding all three `THREE.Points`
+layers moves the card-vs-sky median not at all (3.66:1 either way) and the worst box by
+0.1 — the gap is the baked sky, which the guard deliberately parks near its ceiling.
+Open issues & next steps: The `universe` sky's brightest 128px cell sits at 2.44–2.60:1
+against the card, under the 3:1 criterion — the guard binds on field p99, not field max, and
+this is only fixable in the art (filed in PLAN_NEXT.md). Solar's nine `.orbit-spin`
+animations keep running under `prefers-reduced-motion` (pre-existing, also filed). The comet
+badge glyph (U+2604 + U+FE0E) is verified on Windows/Chrome only — a platform without a text
+glyph falls back to colour emoji and ignores `--milestone-fg`, and this app ships a macOS
+launcher. `window.__perf()` cannot show a hyperspace regression in this environment (all
+three tiers target 60fps and headless holds 16.7ms loaded or not), so Phase 8's frame-time
+criterion was met by proxy — counting canvas stroke calls — and a real number needs
+`Emulation.setCPUThrottlingRate`. A genuinely slow PC remains untested, as at the end of
+Plan 3. `data/` was byte-identical across all nine phases, as the plan required.
+Files touched: `public/js/` (cards, theme, cardFlip, planetPicker), `public/index.html`,
+`CLAUDE.md`, `docs/` (PLAN_ARCHIVE.md, PLAN_NEXT.md, plan file deleted), new
+`.graphifyignore`. Commits `277a6ad`, `30dc9ab`, `58e83fd`, `2e31fd4`.
+
 ## 2026-08-12 — Plan 3 complete: performance & smoothness, low-end PCs first (phases 1-9)
 Completed: Implemented and committed all 9 phases of Plan 3 — perf HUD + `?perf=`/
 `?quality=`, pausing the render behind the entry screen/picker, fairy lights as two
