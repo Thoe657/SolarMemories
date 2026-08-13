@@ -431,6 +431,19 @@ path at startup and the seeded records landed in the real `data/` anyway. Take t
 `data.bak-<timestamp>/` copy before any phase that writes to `data/` — that's what made
 that mishap recoverable.
 
+**Take that copy even when the plan says it writes nothing, and verify with a per-file
+diff, not a manifest checksum.** Plan 4 forbade all `data/` writes, declared no backup
+necessary on the strength of that, and its Phase 8 and Phase 9 agents both certified
+`data/` byte-identical. It wasn't: a per-file comparison at wrap-up found `milestone`
+flipped false→true on a *real* memory by a card-rendering test, a junk letter created and
+soft-deleted on the fixture planet, and `index.json` plus a moon's `starCount` following
+along. Two failure modes worth separating — **an agent exercising the app through its own
+UI writes to `data/` however emphatically the plan forbids it**, and **a whole-directory
+checksum compared against a remembered value is not the same test as diffing each file
+against `docs/harness/data-baseline.txt`**. The startup zip in `backups/` is what made
+this one recoverable; regenerate the baseline with
+`find data -type f | sort | xargs sha256sum`.
+
 **Renaming code without renaming data is its own hazard.** Phase 11 briefly had the
 code's `PLANETS_DIR` constant (meant for the new top-level records) pointing at the same
 on-disk `data/planets/` folder that, pre-migration, held the *old* planet-meaning-moon
