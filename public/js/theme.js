@@ -17,10 +17,18 @@
    the sky and rebuilding the portals mid-session, for a control someone
    touches twice a year. So `setTheme()` persists a *preference* and does
    not repaint: `currentTheme()` keeps returning the theme this page was
-   built against for the whole life of the page. The entry-screen selector
-   says so out loud, the same way the quality selector does for antialias.
+   built against for the whole life of the page.
    Useful consequence: a session's card-texture cache can never hold two
    themes' cards, so Plan 3 Phase 6's LRU key needs no theme component.
+
+   THAT IS STILL TRUE, AND THE USER NO LONGER PAYS FOR IT (Plan 5 Phase 2,
+   decision 10). The entry screen used to say out loud that a theme change
+   landed on the *next* load, the same way the quality selector does for
+   antialias. Now `enter()` reloads the page instead — under its own still-
+   visible curtain, which Plan 5 Phase 1 made static and theme-invariant, so
+   the reload is genuinely invisible and the new page runs the ordinary
+   fade-out on arrival. Nothing here changed: a load is still what applies a
+   theme. What changed is that pressing enter *is* a load.
 
    Precedence, highest first (mirroring quality.js's chain):
      1. ?theme=solar|universe — a deliberate override, for verification.
@@ -482,8 +490,9 @@ export function themeSource() {
 }
 
 // The stored preference, which the entry selector may have moved past the
-// active theme. Compare with currentTheme() to tell the user honestly that
-// their choice completes on the next load.
+// active theme. Comparing it with currentTheme() is how the entry screen
+// knows a load is owed — which since Plan 5 Phase 2 it performs itself,
+// rather than only reporting.
 export function chosenTheme() {
   return choice;
 }
@@ -694,9 +703,10 @@ try {
 
 /* The user-facing setter — the entry screen's selector. Persists and
    returns the stored preference. It deliberately does NOT repaint or
-   change `data-theme`: see the "fixed at load" note at the top. The caller
-   is expected to tell the user the change lands on the next load, which is
-   what chosenTheme() vs currentTheme() is for. */
+   change `data-theme`: see the "fixed at load" note at the top. Getting the
+   choice onto the screen is the caller's business, and since Plan 5 Phase 2
+   the entry screen does it by reloading on enter — which is what
+   chosenTheme() vs currentTheme() is for. */
 export function setTheme(next) {
   if (!isTheme(next)) return choice;
   choice = next;

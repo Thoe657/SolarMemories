@@ -62,6 +62,81 @@ const enterBtn = document.getElementById('entryEnterBtn');
 let visible = true;
 let hideTimer = null;
 
+/* ============================================================
+   SETTINGS THAT NEED A NEW PAGE (Plan 5 Phase 2)
+
+   The theme is fixed at load by design (theme.js, decision 5) and so is
+   antialias (quality.js). Both selectors below therefore used to persist a
+   preference and say, honestly but unhelpfully, that it lands *next time*.
+   Decision 10 makes "next time" mean "now" by reloading the page — and the
+   reload is invisible, because Phase 1 made this menu theme-invariant and
+   static. So it does NOT fade out first: the curtain stays up at full
+   opacity, the page reloads underneath it, and the new page runs the normal
+   700ms fade on arrival. What the user sees is one continuous animation.
+
+   That is also why there is no `data-skip-entry`, no CSS hiding rule and no
+   addition to index.html's inline <head> script. The flag below survives
+   from the original plan but its meaning is inverted: it says "fade me out
+   on arrival", not "hide me instantly".
+
+   Decision 6 — quality reloads too, and not only when the choice crosses
+   the antialias boundary. Everything else the tier controls (texture size,
+   starfield density, galaxy motion) already re-applies live through
+   `onTierChange`, so a boundary-conditional reload would be more correct
+   and less predictable, and "sometimes pressing enter reloads and sometimes
+   it doesn't" is a worse thing to explain than one extra second.
+============================================================ */
+const ENTER_ON_LOAD_KEY = 'solarMemories.enterOnLoad';
+
+/* The quality choice this page resolved against. Compared against
+   `userChoice()` rather than against `currentTier()`, and captured rather
+   than read live, for the same reason: what warrants a reload is the *user*
+   moving the selector, not the tier moving. The rolling frame-time average
+   can step `currentTier()` down mid-session all on its own, and a menu that
+   reloaded because the machine got busy would be exactly the unpredictable
+   behaviour decision 6 rejected. quality.js's body has already run by the
+   time this line does (this module imports it), so this is the stored
+   choice, untouched by any click. */
+const LOAD_CHOICE = userChoice();
+
+/* Wrapped like every other web-storage access in the app: sessionStorage is
+   absent in some embeddings and throws outright when site data is disabled.
+   The failure mode is a menu that needs one more click, never a broken app. */
+function markEnterOnLoad() {
+  try {
+    window.sessionStorage.setItem(ENTER_ON_LOAD_KEY, '1');
+  } catch (e) {
+    /* the next page will just wait for a click */
+  }
+}
+
+// Read-and-clear in one step, so a flag can never outlive the one load it
+// was written for — a stale "fade me out" would skip the menu on a later
+// manual reload, which is the one thing this screen must never do.
+function takeEnterOnLoad() {
+  try {
+    if (window.sessionStorage.getItem(ENTER_ON_LOAD_KEY) === null) return false;
+    window.sessionStorage.removeItem(ENTER_ON_LOAD_KEY);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* Would the next load actually be a different page? Both halves compare
+   against what THIS page was built with, and both stand down when something
+   outranks the selector — a ?theme= or ?quality= override wins again on the
+   reload (it is still in the address bar) and prefers-reduced-motion pins
+   the tier at low regardless, so reloading would spend a second to arrive
+   exactly where we already are. The notes below already say so in words. */
+function reloadNeeded() {
+  const themeMoved = themeSource() !== 'forced' && chosenTheme() !== currentTheme();
+  const qualityMoved = tierSource() !== 'forced'
+    && tierSource() !== 'reduced-motion'
+    && userChoice() !== LOAD_CHOICE;
+  return themeMoved || qualityMoved;
+}
+
 // Deliberately does not touch the Three.js scene: what this reveals is the
 // planet picker, which is DOM, and the picker sits between here and any
 // planet. scene.js stays asleep until planetPicker.js's selectPlanet resumes
@@ -70,6 +145,15 @@ let hideTimer = null;
 function enter() {
   if (!visible) return;
   visible = false;
+
+  /* No `.fading` on this path — see the block above. `visible` is already
+     false, which makes the button inert for the moment the reload takes
+     rather than leaving a live control on a page that is going away. */
+  if (reloadNeeded()) {
+    markEnterOnLoad();
+    location.reload();
+    return;
+  }
 
   entryScreen.classList.add('fading');
   // matches the .overlay fade timing (~500-700ms) elsewhere in the app
@@ -133,7 +217,9 @@ function themeNoteText() {
   if (themeSource() === 'forced') {
     return `held at ${themeConfig().chipLabel} by ?theme= in the address bar`;
   }
-  if (chosenTheme() !== currentTheme()) return 'opens in this theme next time';
+  // Plan 5 Phase 2: this used to read "opens in this theme next time", which
+  // stopped being true when `enter()` learned to reload under its own curtain.
+  if (chosenTheme() !== currentTheme()) return 'applies when you press enter';
   return '';  // the chip already says which theme; nothing to add
 }
 
@@ -188,7 +274,11 @@ function noteText() {
   if (source === 'chosen') {
     return TIER_SETTINGS[tier].antialias === TIER_SETTINGS[loadTimeTier()].antialias
       ? ''  // the chip already says which tier; nothing to add
-      : 'edge smoothing changes next time you open this';
+      // Plan 5 Phase 2 again: still the only *deferred* setting the tier
+      // owns, but "next time you open this" is now "when you press enter".
+      // The note stays narrow — the rest of the tier already applied on the
+      // click, so only the one thing that didn't has anything to announce.
+      : 'edge smoothing applies when you press enter';
   }
   if (source === 'remembered' || source === 'measured') return `auto — ${tier} on this computer`;
   return 'auto — high unless this computer struggles';
@@ -218,4 +308,35 @@ if (qualityOptions && qualityNote) {
   });
 
   renderQualitySelector();
+}
+
+/* ============================================================
+   ARRIVAL AFTER A SETTINGS RELOAD (Plan 5 Phase 2)
+
+   The other half of `enter()`'s reload. The flag says the previous page's
+   curtain was still up when it went, so this page owes the fade it didn't
+   run — and it is the *same* fade, on an identical static menu, which is
+   what makes the reload invisible.
+
+   Deferred by a timeout rather than run inline, for two reasons:
+
+   1. A CSS transition needs a resolved starting style to interpolate from.
+      This is the same hazard showEntryScreen() documents, so it takes the
+      same precaution — flush the layout first, then add `.fading`. Without
+      it the screen can pop straight to transparent, which is precisely the
+      discontinuity decision 10 exists to avoid.
+   2. It lets main.js finish its own body and call init() first, so the
+      picker is fetching underneath while the curtain is still near-opaque.
+      Nothing depends on that fetch finishing — the fade is 700ms and the
+      request is local — but starting the animation *after* startup's
+      synchronous work rather than in the middle of it is free.
+
+   A timeout and not requestAnimationFrame: rAF is suspended in a background
+   tab, which would leave the menu sitting there until the tab is looked at.
+   Harmless (the button still works) but pointless. */
+if (takeEnterOnLoad()) {
+  setTimeout(() => {
+    void entryScreen.offsetWidth;
+    enter();
+  }, 0);
 }
