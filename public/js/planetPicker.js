@@ -12,6 +12,10 @@ import { currentTier, tierSettings, onTierChange } from './quality.js';
    files already use `label` for DOM/texture-caption locals, and a themed
    string silently shadowed by a <span> would be a very quiet bug. */
 import { label as themeLabel, themeFlag, currentTheme, DEFAULT_THEME } from './theme.js';
+/* One-directional: entryScreen.js imports quality.js and theme.js and nothing
+   else, so there is no cycle to work around here — unlike scene.js, which this
+   file reaches through setOnPortalClick callbacks for exactly that reason. */
+import { showEntryScreen } from './entryScreen.js';
 
 /* ============================================================
    PLANET PICKER — twinkling background stars
@@ -462,6 +466,18 @@ const createPlanetBtn = document.getElementById('createPlanetBtn');
 const planetTitleEl = document.getElementById('planetTitle');
 const backToPlanetsBtn = document.getElementById('backToPlanetsBtn');
 const topbar = document.getElementById('topbar');
+const exitToMenuBtn = document.getElementById('exitToMenuBtn');
+
+/* Back to the menu (Plan 5 Phase 1). This does not pause or resume anything:
+   the WebGL scene is already asleep whenever the picker is on screen —
+   showPlanetPicker() pauses it on the way out of a planet, and it starts
+   paused — so covering the picker with the entry screen changes nothing the
+   two pause booleans track. Guarded like the selectors in entryScreen.js: a
+   stale cached index.html without the button must not throw here and take the
+   picker down with it. */
+if (exitToMenuBtn) {
+  exitToMenuBtn.addEventListener('click', () => showEntryScreen());
+}
 
 const ringRow = document.getElementById('ringRow');
 

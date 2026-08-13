@@ -589,6 +589,52 @@
     overflow: hidden;
   }
 
+  /* The way back to the menu (Plan 5 Phase 1). Built from .add-btn's palette
+     and radius rather than from .btn: this is chrome, like the topbar's
+     buttons, not one of the app's actions — and it must not compete with the
+     planets, which are the only thing on this screen anyone came to click. So
+     it is a size down (13px/8px against 14px/10px) and starts at 0.72 opacity.
+
+     Top-left, and that corner is not a matter of taste: everything in the
+     orbit chain is fixed-pixel and centred (outermost ring 320px, arm box
+     800px), so the corners are the farthest points from it at every viewport
+     size — at 20px in from a 700x500 window the button is still ~400px from
+     the centre. z-index because .start-stars is an inset:0 sibling. */
+  .picker-exit {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--ui-bg);
+    border: 1px solid var(--ui-border);
+    color: var(--light-glow);
+    font-family: 'Quicksand', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    min-height: 36px;             /* tap target, per Plan 2 Phase 9 */
+    border-radius: 999px;
+    cursor: pointer;
+    opacity: 0.72;
+    transition: background 0.2s, opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  }
+
+  .picker-exit:hover {
+    opacity: 1;
+    background: rgba(255, 217, 160, 0.18);
+    box-shadow: 0 0 24px rgba(255, 217, 160, 0.25);
+    transform: translateY(-1px);
+  }
+
+  .picker-exit:active {
+    transform: translateY(0px) scale(0.98);
+  }
+
+  .picker-exit svg { flex-shrink: 0; }
+
   .star-layer {
     position: absolute;
     inset: 0;
@@ -1065,8 +1111,9 @@
      coincides with the viewport at the high and medium tiers and does not at
      low, where planetPicker.js's hyperspaceScale() allocates 70% in each axis
      — which is exactly how the low tier ended up playing the transition in a
-     70% box in the top-left corner. #entryScreenCanvas above downsamples the
-     same way and has always had these two lines. */
+     70% box in the top-left corner. (The entry screen's canvas downsampled the
+     same way and carried these two lines for the same reason; Plan 5 Phase 1
+     replaced it with a CSS background, so this is now the only one left.) */
   #hyperspaceCanvas {
     position: fixed;
     inset: 0;
@@ -1120,7 +1167,27 @@
     .add-btn { padding: 10px; }
   }
 
-  /* ---------- Entry screen (nebula start screen) ---------- */
+  /* ---------- Entry screen (the menu) ----------
+
+     THE SKY IS A FIXED IMAGE AND DOES NOT FOLLOW THE THEME (Plan 5 Phase 1,
+     decision 5/9). It replaces the drifting blob canvas that used to live
+     inside this element — see the header of js/entryScreen.js for why the
+     canvas went. Deliberately not tokenised and deliberately not behind a
+     [data-theme] block: this screen is where you *choose* a theme, so it has
+     to belong to neither.
+
+     universe-3 of the six skies, picked by measurement rather than by eye.
+     Averaged into 128px cells (glyph scale once a 4096-wide image is `cover`ed
+     across ~1280px — a single 1px star reads 1.0 in all three and cannot
+     out-shout a letterform), its central half measures L=0.0109 mean /
+     0.0091 median against universe-1's 0.0122 / 0.0111 and universe-2's
+     0.0114 / 0.0107. Its worst cell there still leaves white at 13.0:1. The
+     centre is what is measured because the centre is where the title, the
+     enter button and both settings rows sit.
+
+     #000000 stays under the image: it is what shows on the first paint before
+     ~390KB of WebP has arrived, and /assets is served `immutable`, so on a
+     localhost app that is one fetch ever. */
   #entryScreen {
     position: fixed;
     inset: 0;
@@ -1128,7 +1195,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #000000;
+    background: #000000 url('../assets/backgrounds/universe-3.webp') center / cover no-repeat;
     transition: opacity 0.6s ease;
   }
 
@@ -1139,14 +1206,6 @@
 
   #entryScreen.hidden {
     display: none;
-  }
-
-  #entryScreenCanvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    display: block;
   }
 
   .entry-content {

@@ -25,8 +25,12 @@
 </head>
 <body>
 
+<!-- The sky here is a fixed CSS background, not a canvas (Plan 5 Phase 1,
+     decision 5). The drifting blob canvas that used to sit inside this div is
+     gone: the menu is now reachable again *from* the app, so it has to be
+     cheap to re-show and theme-invariant — a menu that repainted itself in the
+     theme you just left would read as "you are still in solar". -->
 <div id="entryScreen">
-  <canvas id="entryScreenCanvas"></canvas>
   <div class="entry-content">
     <div class="entry-title">maddi's memories</div>
     <div class="entry-actions">
@@ -74,6 +78,23 @@
     </div>
     <div class="orbits" id="orbits"></div>
   </div>
+
+  <!-- The way back to the menu (Plan 5 Phase 1). On the picker only, per
+       decision 4: the topbar already carries five buttons, and #backToPlanetsBtn
+       makes this a two-hop path from inside a planet. Top-left because that
+       corner is the farthest point in the viewport from the centred orbit
+       chain (outermost ring 320px, arm box 800px wide) — the one place a
+       fixed-pixel layout can never reach. Static markup rather than built in
+       planetPicker.js so it carries a data-label like the rest of the copy and
+       renders before any module has run. -->
+  <!-- The key goes on the inner span, not on the button: applyLabels writes
+       textContent, which on the button would delete the icon. One key, not the
+       usual key-plus-aria pair — the menu is outside both vocabularies, so
+       there is nothing here for a theme to rename. -->
+  <button class="picker-exit" id="exitToMenuBtn" aria-label="Back to the menu">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    <span class="label" data-label="exitToMenu">menu</span>
+  </button>
 
   <!-- data-label / data-label-placeholder / data-label-aria (Plan 4 Phase 2):
        the key names a string in js/theme.js's label map, and the literal text

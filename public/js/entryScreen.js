@@ -1,11 +1,34 @@
 /* ============================================================
-   ENTRY SCREEN — nebula start screen shown once on first load
+   ENTRY SCREEN — the menu the app opens on, and returns to
    -----------------------------------------------------------
-   Lightweight standalone 2D canvas (not Three.js), reusing the
-   layered radial-gradient "nebula glow" technique from scene.js,
-   with a slow drift of a few cloud blobs. Purely a visual/
-   interaction gate layered on top of the planet picker, which
-   keeps initializing underneath exactly as it always has.
+   A visual/interaction gate layered on top of the planet picker,
+   which keeps initializing underneath exactly as it always has.
+
+   PLAN 5 PHASE 1 MADE THIS A NET DELETION. It used to paint its own
+   sky: a 2D canvas running a rAF loop over a per-theme set of
+   drifting radial-gradient blobs, at quarter resolution and ~10fps
+   (Plan 3 Phase 2) to keep the app's first impression cheap on the
+   slowest machine it will ever run on. All of that — the canvas, the
+   loop, the resize listener, the two blob sets — is gone, replaced by
+   one fixed sky image in the stylesheet. Two reasons, in order:
+
+   1. THE MENU IS NOW REACHABLE FROM THE APP. `enter()` was one-way and
+      nothing ever removed `.fading .hidden`, so a page load was the
+      only way back. Showing this screen again has to be trivial and
+      idempotent, and "remove two classes" is trivial in a way
+      "restart a throttled animation loop" is not.
+   2. THE MENU SITS OUTSIDE BOTH THEMES (decision 5/9). It is where you
+      *choose* a theme, so painting it in the theme you are about to
+      leave, or have just left, says the wrong thing. The chosen sky is
+      a `universe-*` variant because cool indigo reads as neutral space
+      where a solar-warm sky reads as "you are in solar" — and it is
+      universe-3 specifically because it measured darkest at the
+      centre, where the title and the buttons sit.
+
+   The cost, recorded so nobody "restores" it: Plan 4 Phase 4's
+   per-theme blob art is discarded, and the menu no longer previews
+   which theme you are about to enter. The selected chip already says
+   so in words.
 ============================================================ */
 import {
   TIER_SETTINGS,
@@ -24,135 +47,62 @@ import {
 } from './theme.js';
 
 const entryScreen = document.getElementById('entryScreen');
-const canvas = document.getElementById('entryScreenCanvas');
-const ctx = canvas.getContext('2d');
 const enterBtn = document.getElementById('entryEnterBtn');
 
-/* Backing store is a quarter of the viewport in each axis and CSS stretches it
-   back up (#entryScreenCanvas is inset:0 / 100%×100%, so the upscale is free).
-   Everything drawn here is a soft radial gradient with no edge to lose, so
-   sixteen times fewer pixel writes costs nothing visually — and this canvas
-   used to fill the whole viewport with black plus three full-viewport
-   gradients on every single frame, roughly 8M pixel writes at 1080p, as the
-   app's first impression on the slowest machine it will ever run on. */
-const RESOLUTION_SCALE = 0.25;
+/* The screen is shown on load and hidden by `enter()`; `showEntryScreen()`
+   brings it back. The two are mirror images and must be able to alternate
+   indefinitely, so both are guarded on one boolean rather than on the DOM
+   classes — reading the classes would make "currently fading out" and
+   "hidden" two different states to reason about, and a click landing during
+   the fade is exactly the case that has to behave.
 
-/* ~10 redraws a second. The blobs drift on a ~5-minute cycle (speeds of
-   0.015–0.02 rad/s), so consecutive frames at display rate are visually
-   identical — the motion being animated is far slower than the rate it was
-   being animated at. Combined with the scale above this is ~100× less pixel
-   work per second. */
-const DRAW_INTERVAL_MS = 100;
+   The pending timeout is tracked for the same reason: `enter()` schedules
+   `.hidden` 700ms out, and a `showEntryScreen()` inside that window would
+   otherwise be undone by a timer fired for a state that no longer exists. */
+let visible = true;
+let hideTimer = null;
 
-let width = 0, height = 0;
-// -Infinity, not 0: the first call comes in with now=0, and a real timestamp
-// minus 0 must not be mistaken for "already drawn recently".
-let lastDrawAt = -Infinity;
-
-function resize() {
-  width = canvas.width = Math.max(1, Math.round(window.innerWidth * RESOLUTION_SCALE));
-  height = canvas.height = Math.max(1, Math.round(window.innerHeight * RESOLUTION_SCALE));
-  lastDrawAt = -Infinity; // resizing a canvas clears it — redraw on the next frame, not in 100ms
-}
-resize();
-window.addEventListener('resize', resize);
-
-/* Nebula cloud blobs, reusing the layered radial-gradient technique from
-   scene.js's paintGlow. Plan 4 Phase 4 gives each theme its own set — more
-   of them, and coloured rather than three near-neutral violets.
-
-   THE RICHNESS IS IN THE ARRANGEMENT, NOT IN THE MOTION, and that is a hard
-   constraint rather than a preference: Plan 3 Phase 2 took this canvas to
-   quarter resolution at ~10fps precisely because it was the app's first
-   impression on the slowest machine it will ever run on. Neither
-   RESOLUTION_SCALE nor DRAW_INTERVAL_MS moves here.
-
-   So the three original blobs are kept exactly as they were, drift and all,
-   and everything added is a SMALL ACCENT AT speed: 0 — a fixed composition
-   element, not a fourth thing to animate. The added radii are 0.16–0.28
-   against the originals' 0.5–0.6, so the extra fill area is a fraction of
-   one canvas rather than a multiple of it; at 316×176 (a 1280-wide window)
-   the four solar accents come to roughly one canvas's worth of pixels per
-   frame, ten times a second.
-
-   Solar gains warmth (amber, rose, a pale core) where universe goes cool and
-   banded (deep blue, teal, violet, a bright cyan core) — the palette
-   temperature lever from the plan's stranger test. Alphas stay at or below
-   the originals' 0.5 over black, which is what keeps this screen under the
-   plan-wide "the sky never out-shouts the cards" ceiling. */
-const BLOB_THEMES = {
-  solar: [
-    { baseX: 0.3, baseY: 0.35, r: 0.55, color: 'rgba(80,60,120,ALPHA)', alpha: 0.5, speed: 0.02, phase: 0 },
-    { baseX: 0.72, baseY: 0.4, r: 0.5, color: 'rgba(110,70,90,ALPHA)', alpha: 0.4, speed: 0.015, phase: 2 },
-    { baseX: 0.5, baseY: 0.7, r: 0.6, color: 'rgba(60,50,100,ALPHA)', alpha: 0.45, speed: 0.018, phase: 4 },
-    { baseX: 0.18, baseY: 0.72, r: 0.26, color: 'rgba(190,120,80,ALPHA)', alpha: 0.22, speed: 0, phase: 1 },
-    { baseX: 0.62, baseY: 0.18, r: 0.22, color: 'rgba(210,140,150,ALPHA)', alpha: 0.2, speed: 0, phase: 3 },
-    { baseX: 0.86, baseY: 0.68, r: 0.28, color: 'rgba(120,80,150,ALPHA)', alpha: 0.24, speed: 0, phase: 5 },
-    { baseX: 0.42, baseY: 0.46, r: 0.16, color: 'rgba(255,214,170,ALPHA)', alpha: 0.14, speed: 0, phase: 6 },
-  ],
-  universe: [
-    { baseX: 0.34, baseY: 0.32, r: 0.58, color: 'rgba(38,58,120,ALPHA)', alpha: 0.5, speed: 0.02, phase: 0 },
-    { baseX: 0.7, baseY: 0.44, r: 0.52, color: 'rgba(30,86,110,ALPHA)', alpha: 0.42, speed: 0.015, phase: 2 },
-    { baseX: 0.5, baseY: 0.74, r: 0.6, color: 'rgba(52,44,110,ALPHA)', alpha: 0.46, speed: 0.018, phase: 4 },
-    { baseX: 0.2, baseY: 0.66, r: 0.26, color: 'rgba(40,120,140,ALPHA)', alpha: 0.22, speed: 0, phase: 1 },
-    { baseX: 0.66, baseY: 0.2, r: 0.24, color: 'rgba(90,70,170,ALPHA)', alpha: 0.22, speed: 0, phase: 3 },
-    { baseX: 0.88, baseY: 0.7, r: 0.28, color: 'rgba(24,70,130,ALPHA)', alpha: 0.24, speed: 0, phase: 5 },
-    { baseX: 0.46, baseY: 0.5, r: 0.16, color: 'rgba(150,210,255,ALPHA)', alpha: 0.12, speed: 0, phase: 6 },
-  ]
-};
-
-// Falls back rather than rendering an empty black screen if a registry entry
-// ever ships without a blob set — the same posture theme.js's own accessors
-// take for a theme it doesn't recognise.
-const blobs = BLOB_THEMES[currentTheme()] || BLOB_THEMES.solar;
-
-function paintGlow(x, y, r, color, alpha) {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, color.replace('ALPHA', alpha));
-  g.addColorStop(1, color.replace('ALPHA', '0'));
-  ctx.fillStyle = g;
-  ctx.fillRect(x - r, y - r, r * 2, r * 2);
-}
-
-let animId = null;
-let running = true;
-
-function draw(now = 0) {
-  // The rAF chain is kept at display rate and the *work* is what's throttled,
-  // so a resize still repaints on the very next frame rather than whenever the
-  // accumulator next comes round.
-  if (running) animId = requestAnimationFrame(draw);
-  if (now - lastDrawAt < DRAW_INTERVAL_MS) return;
-  lastDrawAt = now;
-
-  const t = now / 1000;
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, width, height);
-
-  const maxDim = Math.max(width, height);
-  blobs.forEach((b) => {
-    const x = (b.baseX + Math.sin(t * b.speed + b.phase) * 0.04) * width;
-    const y = (b.baseY + Math.cos(t * b.speed * 0.8 + b.phase) * 0.04) * height;
-    paintGlow(x, y, b.r * maxDim, b.color, b.alpha);
-  });
-}
-draw();
-
-// Deliberately does not wake the Three.js scene: what this reveals is the
+// Deliberately does not touch the Three.js scene: what this reveals is the
 // planet picker, which is DOM, and the picker sits between here and any
 // planet. scene.js stays asleep until planetPicker.js's selectPlanet resumes
-// it mid-whiteout.
+// it mid-whiteout — and stays asleep on the way back out too, since
+// planetPicker.js has already paused it before this screen can be reached.
 function enter() {
-  if (!running) return;
-  running = false;
-  if (animId) cancelAnimationFrame(animId);
-  window.removeEventListener('resize', resize);
+  if (!visible) return;
+  visible = false;
 
   entryScreen.classList.add('fading');
   // matches the .overlay fade timing (~500-700ms) elsewhere in the app
-  setTimeout(() => {
+  hideTimer = setTimeout(() => {
+    hideTimer = null;
     entryScreen.classList.add('hidden');
   }, 700);
+}
+
+/* The way back, called by planetPicker.js's exit button (Plan 5 Phase 1).
+
+   The order of the three steps is load-bearing. `.hidden` is `display: none`,
+   and dropping `display: none` and `opacity: 0` in the same frame gives the
+   style engine nothing to interpolate from — the screen would pop rather than
+   fade. So: un-hide, force a reflow to flush that as a real starting style,
+   then drop `.fading` and let the transition run. */
+export function showEntryScreen() {
+  if (visible) return;
+  visible = true;
+
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+
+  entryScreen.classList.remove('hidden');
+  void entryScreen.offsetWidth;
+  entryScreen.classList.remove('fading');
+
+  /* Both notes can have gone stale while the app was open — the quality one
+     most obviously, since the rolling frame-time average may have stepped the
+     tier down since this screen was last read. Re-rendering is what keeps the
+     honesty the two selectors were built for; guarded because their markup is
+     optional (see the two blocks below). */
+  if (themeOptions && themeNote) renderThemeSelector();
+  if (qualityOptions && qualityNote) renderQualitySelector();
 }
 
 enterBtn.addEventListener('click', enter);

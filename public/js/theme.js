@@ -134,6 +134,14 @@ const REGISTRY = {
       // rings into spiral arms, and "orbit" then describes a layout that is no
       // longer there.
       ringField: 'orbit',
+      /* The picker's way back to the entry screen (Plan 5 Phase 1). The same
+         string in both themes, and that is the point rather than an oversight:
+         decision 5 puts the menu *outside* both vocabularies — it is a fixed,
+         theme-invariant sky where you choose which theme to go into. It lives
+         in the map anyway so the copy is in the one table you read to check
+         the two vocabularies against each other, and so a future theme can
+         rename it without touching index.html. */
+      exitToMenu: 'menu',
       // the topbar / edit panel
       editPlanet: 'edit planet',
       editPlanetAria: 'Edit this planet',
@@ -231,6 +239,8 @@ const REGISTRY = {
       // maddi rather than a direction. Named in the plan explicitly.
       ringHint: 'closest to farthest from the centre',
       ringField: 'arm',
+      // Deliberately identical to solar's — see the note beside it.
+      exitToMenu: 'menu',
       editPlanet: 'edit galaxy',
       editPlanetAria: 'Edit this galaxy',
       backToPlanetsAria: 'Back to galaxies',
