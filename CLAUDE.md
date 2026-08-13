@@ -567,11 +567,20 @@ gitignore spec and honoured by the hook's rebuild path (`watch.py`), which evict
 every rebuild — verified by forcing a full rebuild with both excluded paths named as changed
 files and getting zero nodes from either. It is *not* a git ignore: both paths stay tracked.
 
-**Current clean baseline: 651 nodes / 1295 edges / 38 communities / 35 files** (3 communities
-too thin to report), as of 2026-08-13. The older "568 / 24 (none thin)" figure was the
-2026-08-12 build and is superseded — the graph grew legitimately over Plan 4 (`theme.js`,
-`perfHud.js`, and the rest). Compare against 651 / 38, not 568 / 24, before concluding the
-corpus has drifted again.
+**The health check is "zero nodes from either excluded path", not a node count.** A clean
+build is roughly 700 nodes / ~1350 edges / ~35 files (2026-08-13: 696 / 1352 / 49 communities,
+10 thin). Treat those as an order-of-magnitude sanity check only — **an exact count here is
+self-invalidating**, because this file is itself in the corpus, so writing a number into it
+changes the number. The 2026-08-12 build's "568 / 24 (none thin)" is superseded; the graph grew
+legitimately over Plan 4 (`theme.js`, `perfHud.js`, and the rest) and drifts a little with every
+doc edit. What *is* a stable invariant, and the thing to actually check:
+
+```bash
+node -e "const g=require('./graphify-out/graph.json');console.log(g.nodes.filter(n=>/three\.min|public\/assets\/backgrounds/.test(n.source_file||'')).length)"
+```
+
+That must print `0`. If it prints four figures, the exclusions are gone again — check
+`.graphifyignore` still exists at the repo root before re-deriving anything from node counts.
 
 `CLAUDE.md`, `MEMORY.md`, `README.md` and `index.html` **are** in the corpus, and that is the
 point: the rationale in this file is linked to the symbols it explains, so a query for e.g.
