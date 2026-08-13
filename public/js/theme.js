@@ -142,7 +142,16 @@ const REGISTRY = {
       // the ring's moons and its portals
       moon: 'moon',
       previousMoon: 'previous moon',
-      nextMoon: 'next moon'
+      nextMoon: 'next moon',
+      /* The read panel's milestone pill (Plan 4 Phase 8). The glyph leads the
+         string rather than living in CSS as a ::before, because it is the
+         DOM half of "the badge follows the shape" — the card's silhouette is
+         a star here and a comet in universe, and the pill has to say the same
+         thing. Kept as one label rather than a glyph key plus a word key: the
+         two are never wanted apart, and one string is one thing to translate.
+         The comet carries U+FE0E (text presentation) for the reason spelled
+         out beside universe's copy. */
+      milestoneBadge: '✦ milestone'
     },
     backgrounds: [
       'assets/backgrounds/nebula-1.webp',
@@ -191,7 +200,12 @@ const REGISTRY = {
     features: {
       spiralPicker: false,
       blackHolePortals: false,
-      darkSurfaces: false
+      darkSurfaces: false,
+      // Plan 4 Phase 8. Two flags rather than one: the milestone silhouette
+      // and the hyperspace palette are separate surfaces with separate revert
+      // conditions, and a theme could reasonably want one without the other.
+      cometMilestones: false,
+      hyperspaceRetint: false
     }
   },
 
@@ -218,7 +232,17 @@ const REGISTRY = {
       deletePlanet: 'delete this galaxy',
       moon: 'nebula',
       previousMoon: 'previous nebula',
-      nextMoon: 'next nebula'
+      nextMoon: 'next nebula',
+      /* U+2604 COMET, followed by U+FE0E VARIATION SELECTOR-15. The selector
+         is load-bearing: U+2604 defaults to *text* presentation per Unicode,
+         but every platform that ships a colour comet will happily serve it
+         from the emoji font if nothing asks otherwise, and a full-colour
+         emoji in a gold pill ignores --milestone-fg entirely. FE0E asks for
+         the monochrome glyph, which then inherits the pill's colour like the
+         solar star does. Where no text glyph exists the platform falls back
+         to the colour one — still a comet, just not tinted — which is the
+         right failure. */
+      milestoneBadge: '☄︎ milestone'
     },
     // These three files do not exist yet — Phase 3 generates them, as a
     // second family from the same procedural script. The paths are declared
@@ -334,7 +358,9 @@ const REGISTRY = {
     features: {
       spiralPicker: true,
       blackHolePortals: true,
-      darkSurfaces: true
+      darkSurfaces: true,
+      cometMilestones: true,
+      hyperspaceRetint: true
     }
   }
 };

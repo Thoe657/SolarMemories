@@ -33,7 +33,7 @@ import { tierSettings } from './quality.js';
    The theme is fixed at load (theme.js's opening note), so these are read at
    draw time and never change under a live texture; that is also why Plan 4
    decision 5 leaves scene.js's LRU cache key without a theme component. */
-import { token, cardPalette, themedAccent } from './theme.js';
+import { token, cardPalette, themedAccent, themeFlag } from './theme.js';
 
 /* ----- The card's drawing space (Plan 3 Phase 6) -----
    Every coordinate, font size, line width and corner radius in this file is
@@ -76,11 +76,12 @@ export function makeCardCanvas() {
 export function makePolaroidTexture(memory) {
   const { canvas, ctx, W, H } = makeCardCanvas();
 
-  // Milestone memories get an alpha-masked star silhouette instead of the
-  // rounded-rect polaroid (see drawMilestoneStarCard below); everything else
-  // is the plain layout, unchanged from before this branch existed.
+  // Milestone memories get an alpha-masked star (solar) or comet (universe)
+  // silhouette instead of the rounded-rect polaroid (see drawMilestoneCard
+  // below); everything else is the plain layout, unchanged from before this
+  // branch existed.
   if (memory.milestone) {
-    drawMilestoneStarCard(ctx, memory, W, H);
+    drawMilestoneCard(ctx, memory, W, H);
   } else {
     drawPlainPolaroid(ctx, memory, W, H);
   }
@@ -203,74 +204,208 @@ function buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy) {
   return path;
 }
 
+/* ----- The comet (Plan 4 Phase 8) -----
+   `universe`'s milestone silhouette. Deliberately the SAME SIGNATURE as
+   buildStarPath, because there are three call sites (the card's fill, its
+   clip, its two border strokes, and the card back's small glyph) and every
+   one of them wants "the milestone shape at this size" rather than a shape
+   of its own. One builder swapped for another is the whole branch.
+
+   What the six parameters mean here:
+   - (cx, cy) and the OUTER radii are the envelope, exactly as for the star:
+     shrinking them shrinks the whole comet about the same centre, which is
+     what makes the inner gold border a plain second call with smaller
+     numbers rather than a second shape.
+   - The INNER radii set the head. The star uses them for its notch depth;
+     the comet has no notches, so they buy the one other size it needs.
+     innerRx alone, never innerRy: the head must be a CIRCLE in pixel space
+     or the photo medallion inside it stops being one, and outerRx/outerRy
+     are not equal (232 vs 272 on a real card).
+
+   The construction is a half-circle plus two curves: the arc covers the
+   head's far side (from +perpendicular round through -unit to
+   -perpendicular, i.e. exactly pi of turn), then one quadratic out to the
+   tip and one back, each bowed outward so the tail flares rather than
+   reading as a triangle. Because the arc is defined off the head->tip
+   direction rather than off fixed angles, the shape is correct for any tip
+   position — nothing here assumes the up-and-left aim below. */
+const COMET_HEAD_SCALE = 1.14;   // head radius, as a multiple of innerRx
+const COMET_HEAD_U = 0.17;       // head centre: right of cx, in outerRx
+const COMET_HEAD_V = 0.18;       // head centre: below cy, in outerRy
+const COMET_TIP_U = -0.88;       // tail tip: left of cx, in outerRx
+const COMET_TIP_V = -0.88;       // tail tip: above cy, in outerRy
+/* How far the tail edges bow, in head radii, positive = outward. NEGATIVE ON
+   PURPOSE, and it is the difference between a comet and a teardrop: bowed
+   outward (the first thing tried, at +0.23) the silhouette is a fat drop with
+   a point on it, because a straight-or-convex edge from the head's full width
+   to the tip never necks in. Pulled inward the edges are concave, the tail
+   sweeps away from the head instead of tapering off it, and the shape reads
+   as a comet at card size. Mid-tail half-width goes from 107px (outward) to
+   77px (inward) on a 175px head. */
+const COMET_TAIL_BOW = -0.12;
+
+// The head is wanted by both the path and the layout that fills it, and a
+// second copy of the arithmetic is exactly the kind of thing that drifts.
+function cometHead(cx, cy, outerRx, outerRy, innerRx) {
+  return {
+    hx: cx + outerRx * COMET_HEAD_U,
+    hy: cy + outerRy * COMET_HEAD_V,
+    r: innerRx * COMET_HEAD_SCALE
+  };
+}
+
+function buildCometPath(cx, cy, outerRx, outerRy, innerRx, innerRy) {
+  const { hx, hy, r } = cometHead(cx, cy, outerRx, outerRy, innerRx);
+  const tipX = cx + outerRx * COMET_TIP_U;
+  const tipY = cy + outerRy * COMET_TIP_V;
+
+  // unit vector head -> tip, and the perpendicular the tail's width runs along
+  const dx = tipX - hx, dy = tipY - hy;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = -(dy / len), py = dx / len;
+
+  const ax = hx + px * r, ay = hy + py * r;   // where the near tail edge meets the head
+  const bx = hx - px * r, by = hy - py * r;   // ... and the far one
+  const startAngle = Math.atan2(ay - hy, ax - hx);
+  const bow = r * COMET_TAIL_BOW;
+
+  const path = new Path2D();
+  path.moveTo(ax, ay);
+  // Exactly half a turn from A to B. Sweeping the positive direction from the
+  // +perpendicular passes through -unit, i.e. the side of the head facing
+  // away from the tail — which is the half we want to keep.
+  path.arc(hx, hy, r, startAngle, startAngle + Math.PI, false);
+  path.quadraticCurveTo((bx + tipX) / 2 - px * bow, (by + tipY) / 2 - py * bow, tipX, tipY);
+  path.quadraticCurveTo((tipX + ax) / 2 + px * bow, (tipY + ay) / 2 + py * bow, ax, ay);
+  path.closePath();
+  return path;
+}
+
+// Which silhouette a milestone memory is cut into. The flag is false in solar
+// (theme.js), so the default theme can only ever reach buildStarPath.
+function milestoneShape() {
+  return themeFlag('cometMilestones') ? 'comet' : 'star';
+}
+
+function buildMilestonePath(shape, cx, cy, outerRx, outerRy, innerRx, innerRy) {
+  return shape === 'comet'
+    ? buildCometPath(cx, cy, outerRx, outerRy, innerRx, innerRy)
+    : buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy);
+}
+
+/* Where the medallion and the two captions sit inside the silhouette.
+   The star is symmetric about the card's own centre line, so its anchors are
+   the literals that were written inline before this phase — byte-for-byte, so
+   solar's milestone cards stay pixel-identical. The comet's head is off-centre
+   by construction, so every one of its anchors is derived from the head
+   instead: the photo medallion sits inside the head, and both captions hang
+   below it, still inside the head's width at their own heights. Nothing is
+   anchored to the tail — a tail narrows, and text in a narrowing space is a
+   layout that works until someone writes a longer title.
+
+   THE MEDALLION'S TWO NUMBERS ARE A CLEARANCE BUDGET, not a look. Its offset
+   above the head centre plus its radius must stay under the head radius, and
+   with enough margin for two strokes that are drawn on top of each other's
+   space: the medallion's own 4px gold ring (±2) and the silhouette's 9px
+   outer border (±4.5). 0.30 + 0.585 = 0.885 leaves 0.115 of the head radius,
+   about 20px on a real card, which is comfortably more than the ~6.5px the
+   two strokes need. The first pass used 0.33 + 0.615 and left 9.6px, where
+   the ring visibly grazed the outline at the top right. */
+function milestoneLayout(shape, cx, cy, outerRx, outerRy, innerRx, innerRy) {
+  if (shape !== 'comet') {
+    const photoCy = cy - 70, photoR = 118;
+    return {
+      photoCx: cx, photoCy, photoR,
+      textCx: cx,
+      titleY: photoCy + photoR + 54,
+      dateY: cy + innerRy - 40,
+      glowCx: cx, glowCy: cy - 20, glowR: outerRy
+    };
+  }
+  const { hx, hy, r } = cometHead(cx, cy, outerRx, outerRy, innerRx);
+  const photoR = r * 0.585;
+  const photoCy = hy - r * 0.30;
+  return {
+    photoCx: hx, photoCy, photoR,
+    textCx: hx,
+    titleY: photoCy + photoR + 50,
+    dateY: hy + r * 0.83,
+    glowCx: hx, glowCy: hy - 20, glowR: outerRy
+  };
+}
+
 // Milestone memories' card: the paper, photo and caption are all clipped to
-// a 5-point star Path2D (destination content simply isn't drawn outside it,
-// same idea as `ctx.clip()` + `destination-in` -- the canvas starts fully
-// transparent, so "not drawn" already means "alpha 0"). The result is that
-// the whole texture's opaque region *is* the star silhouette -- replacing
-// the old gold-double-border signal rather than layering under it. The
-// plane geometry/material this gets mapped onto in scene.js is untouched
+// the milestone silhouette -- a 5-point star in solar, a comet in universe
+// (Plan 4 Phase 8) -- as a Path2D (destination content simply isn't drawn
+// outside it, same idea as `ctx.clip()` + `destination-in` -- the canvas
+// starts fully transparent, so "not drawn" already means "alpha 0"). The
+// result is that the whole texture's opaque region *is* the silhouette --
+// replacing the old gold-double-border signal rather than layering under it.
+// The plane geometry/material this gets mapped onto in scene.js is untouched
 // (still the same 512:600 rect, still raycast as a full rect), so this is
-// purely a texture-level effect per the plan's design decision.
-function drawMilestoneStarCard(ctx, memory, W, H) {
+// purely a texture-level effect per the plan's design decision -- which is
+// also why the shape can change per theme without the scene noticing.
+function drawMilestoneCard(ctx, memory, W, H) {
+  const shape = milestoneShape();
   const cx = W / 2, cy = 300;
   const outerRx = 232, outerRy = 272;
   const innerRx = outerRx * 0.66, innerRy = outerRy * 0.66;
-  const star = buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy);
+  const body = buildMilestonePath(shape, cx, cy, outerRx, outerRy, innerRx, innerRy);
+  const lay = milestoneLayout(shape, cx, cy, outerRx, outerRy, innerRx, innerRy);
   const paint = cardPalette();
 
   ctx.save();
   ctx.fillStyle = token('--card-bg');
-  ctx.fill(star);
-  ctx.clip(star);
+  ctx.fill(body);
+  ctx.clip(body);
 
-  // warm glow behind the photo so the star reads as "lit up", not just an
-  // outline, even out toward its points where the photo doesn't reach. The
-  // milestone gold stays gold in both themes -- it says something about the
-  // memory, not about the surface -- so only its strength changes.
-  const glow = ctx.createRadialGradient(cx, cy - 20, 30, cx, cy - 20, outerRy);
+  // warm glow behind the photo so the shape reads as "lit up", not just an
+  // outline, even out toward the star's points or along the comet's tail
+  // where the photo doesn't reach. The milestone gold stays gold in both
+  // themes -- it says something about the memory, not about the surface --
+  // so only its strength changes. It is centred on whatever the shape's
+  // bright end is: the star's middle, the comet's head.
+  const glow = ctx.createRadialGradient(lay.glowCx, lay.glowCy, 30, lay.glowCx, lay.glowCy, lay.glowR);
   glow.addColorStop(0, paint.milestoneGlow);
   glow.addColorStop(1, 'rgba(255, 221, 150, 0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, W, H);
 
-  // photo/placeholder as a circular medallion near the star's centre --
-  // kept inside the star's "safe" inner pentagon so it doesn't get chewed
-  // up by the points/notches
-  const photoR = 118;
-  const photoCx = cx, photoCy = cy - 70;
-  drawCircularPhotoOrPlaceholder(ctx, memory, photoCx, photoCy, photoR);
+  // photo/placeholder as a circular medallion -- inside the star's "safe"
+  // inner pentagon, or inside the comet's head, so it never gets chewed up
+  // by the points/notches or by the tail
+  drawCircularPhotoOrPlaceholder(ctx, memory, lay.photoCx, lay.photoCy, lay.photoR);
 
   ctx.strokeStyle = paint.milestoneRing;
   ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.arc(photoCx, photoCy, photoR, 0, Math.PI * 2);
+  ctx.arc(lay.photoCx, lay.photoCy, lay.photoR, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.fillStyle = token('--card-text');
   ctx.font = '600 32px "Comic Sans MS", "Caveat", cursive, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  wrapText(ctx, memory.title || 'untitled memory', cx, photoCy + photoR + 54, 240, 36);
+  wrapText(ctx, memory.title || 'untitled memory', lay.textCx, lay.titleY, 240, 36);
 
   ctx.fillStyle = paint.milestoneDate;
   ctx.font = '500 22px "Comic Sans MS", "Caveat", cursive, sans-serif';
   if (memory.date) {
-    ctx.fillText(formatDate(memory.date), cx, cy + innerRy - 40);
+    ctx.fillText(formatDate(memory.date), lay.textCx, lay.dateY);
   }
 
-  ctx.restore(); // drop the star clip so the border below draws full-width
+  ctx.restore(); // drop the clip so the border below draws full-width
 
   // gold double-border, echoing the old rectangular treatment but traced
-  // along the star outline instead
+  // along the silhouette instead
   ctx.strokeStyle = paint.milestoneLine;
   ctx.lineWidth = 9;
-  ctx.stroke(star);
+  ctx.stroke(body);
 
-  const innerStar = buildStarPath(cx, cy, outerRx - 10, outerRy - 10, innerRx - 6, innerRy - 6);
+  const inner = buildMilestonePath(shape, cx, cy, outerRx - 10, outerRy - 10, innerRx - 6, innerRy - 6);
   ctx.strokeStyle = paint.milestoneInner;
   ctx.lineWidth = 3;
-  ctx.stroke(innerStar);
+  ctx.stroke(inner);
 }
 
 export function roundRect(ctx, x, y, w, h, r) {
@@ -582,11 +717,19 @@ export function makeCardBackTexture(memory) {
     roundRect(ctx, 4, 4, W-8, H-8, 14);
     ctx.stroke();
 
-    // Subtle echo of the front's star silhouette, not a full shape change --
-    // the back is only seen edge-on mid-flip, so a small filled glyph reads
-    // fine without redoing this side's geometry/clip to match the front.
+    /* Subtle echo of the front's silhouette, not a full shape change -- the
+       back is only seen edge-on mid-flip, so a small filled glyph reads fine
+       without redoing this side's geometry/clip to match the front. It goes
+       through the same builder as the front (Plan 4 Phase 8), so the two
+       faces can never disagree about which shape a milestone is.
+
+       Note the comet comes out a little smaller than the star at the same
+       numbers -- a star fills its whole +/-26 box with its five points, while
+       the comet's head reaches ~0.83 of it and its tail ~0.85. Left as is:
+       matching extents exactly would mean a second set of literals here for
+       one glyph seen for 400ms at a glancing angle. */
     ctx.fillStyle = paint.milestoneLine;
-    ctx.fill(buildStarPath(W / 2, 66, 26, 26, 10, 10));
+    ctx.fill(buildMilestonePath(milestoneShape(), W / 2, 66, 26, 26, 10, 10));
   } else {
     ctx.strokeStyle = paint.rim;
     ctx.lineWidth = 2;

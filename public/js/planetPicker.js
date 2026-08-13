@@ -264,17 +264,20 @@ onTierChange(resizeHyperspaceCanvas);
 
 /* Two intensities of the same effect. `planet` is the original, unchanged:
    crossing between planets. `moon` is the escalation used for hopping
-   between moons *within* one planet — longer, denser, and drawn in the
-   warm/rose/violet range instead of a single warm white, so the two trips
-   don't feel interchangeable. */
+   between moons *within* one planet — longer, denser, and drawn in a
+   five-colour range instead of a single white, so the two trips don't feel
+   interchangeable.
+
+   COLOUR LIVES IN HYPERSPACE_PALETTES BELOW, NOT HERE (Plan 4 Phase 8).
+   What's left in a preset is the effect's *shape* — how long, how dense, how
+   fast, how hard it flashes — which is identical in both themes, because
+   this phase is a retint and nothing else. */
 const HYPERSPACE_PRESETS = {
   planet: {
     duration: 1100,
     starCount: 220,
     speedScale: 1,
     trailScale: 1,
-    colors: ['255, 245, 225'],
-    flashColor: '255, 250, 240',
     flashMax: 0.5
   },
   moon: {
@@ -282,11 +285,50 @@ const HYPERSPACE_PRESETS = {
     starCount: 420,
     speedScale: 1.35,
     trailScale: 1.5,
-    colors: ['255, 245, 225', '255, 217, 160', '242, 166, 176', '184, 166, 242', '166, 232, 242'],
-    flashColor: '246, 236, 255',
     flashMax: 0.7
   }
 };
+
+/* THE COLOUR COUNT PER PRESET IS LOAD-BEARING AND MUST NOT CHANGE.
+   Streak stars are batched into `${color}|${width}` buckets (see the note in
+   playHyperspace), so a frame costs one stroke call per bucket. Widths run
+   1–4px quantised to 0.5, i.e. 7 steps; the bucket ceiling is therefore
+   colours x 7 — 1 x 7 = 7 for the planet trip and 5 x 7 = 35 for the moon
+   trip, in BOTH themes. Adding a sixth colour to the moon list would push
+   that to 42 and spend ~20% more stroke calls a frame at the app's most
+   performance-sensitive moment, which is exactly what Plan 3 Phase 8 bought
+   down and what this phase's "frame time unchanged" criterion protects. Retint
+   by replacing entries, never by appending them.
+
+   Solar's values are the literals that were sitting in the presets before
+   this phase, so the default theme's hyperspace is byte-identical. Universe
+   swaps the warm/rose/violet range for the cool blues the rest of the skin
+   uses — the same move, and the same reasoning, as starfieldPalette() above. */
+const HYPERSPACE_PALETTES = {
+  solar: {
+    planet: { colors: ['255, 245, 225'], flashColor: '255, 250, 240' },
+    moon: {
+      colors: ['255, 245, 225', '255, 217, 160', '242, 166, 176', '184, 166, 242', '166, 232, 242'],
+      flashColor: '246, 236, 255'
+    }
+  },
+  universe: {
+    planet: { colors: ['214, 230, 255'], flashColor: '235, 244, 255' },
+    moon: {
+      colors: ['235, 244, 255', '198, 214, 255', '150, 205, 255', '168, 196, 255', '190, 170, 255'],
+      flashColor: '226, 238, 255'
+    }
+  }
+};
+
+/* Selected by the feature flag rather than by the theme name alone, so a
+   theme that hasn't opted in falls back to solar's palette even if someone
+   later adds a block for it above. `kind` is 'planet' | 'moon'. */
+function hyperspacePalette(kind) {
+  const family = themeFlag('hyperspaceRetint') ? currentTheme() : DEFAULT_THEME;
+  const set = HYPERSPACE_PALETTES[family] || HYPERSPACE_PALETTES[DEFAULT_THEME];
+  return set[kind] || set.planet;
+}
 
 // Plays the hyperspace effect at the named intensity. Calls onMid halfway
 // through (the moment of maximum streak/whiteout — good time to swap scene
@@ -294,15 +336,17 @@ const HYPERSPACE_PRESETS = {
 function playHyperspace(onMid, kind = 'planet') {
   return new Promise((resolve) => {
     // A stated motion preference outranks the drama: fall back to the shorter,
-    // sparser trip rather than escalating.
-    const preset = HYPERSPACE_PRESETS[prefersReducedMotion() ? 'planet' : kind]
-      || HYPERSPACE_PRESETS.planet;
+    // sparser trip rather than escalating. Resolving the *key* first (rather
+    // than the preset, then recovering the key by identity) is what lets the
+    // palette be looked up by the same name.
+    const kindKey = (!prefersReducedMotion() && HYPERSPACE_PRESETS[kind]) ? kind : 'planet';
+    const preset = HYPERSPACE_PRESETS[kindKey];
+    const palette = hyperspacePalette(kindKey);
     const DURATION = preset.duration;
     // Star count comes from the tier, not the preset: 420/220 at high,
     // 260/160 at medium, 140/100 at low (quality.js's TIER_SETTINGS). The
     // preset's own starCount is the high-tier figure and stays as the
     // reference for what the effect was designed to look like.
-    const kindKey = preset === HYPERSPACE_PRESETS.moon ? 'moon' : 'planet';
     const STAR_COUNT = tierSettings().hyperspaceStars[kindKey];
     const cx = hyperspaceCanvas.width / 2;
     const cy = hyperspaceCanvas.height / 2;
@@ -317,16 +361,19 @@ function playHyperspace(onMid, kind = 'planet') {
        changed the look. Instead each star's random width is *rounded to a
        0.5px step when it is created*, so the width it draws at is exactly its
        bucket's — nothing is approximated at draw time. Widths run 1–4px, which
-       is 7 steps; times 5 colours for the moon preset that is at most 35
-       buckets a frame rather than 420, and the planet preset's single colour
+       is 7 steps; times the moon palette's 5 colours that is at most 35
+       buckets a frame rather than 420, and the planet palette's single colour
        collapses to 7. At these sizes, on streaks that are motion blur by
-       design, a 0.5px quantisation of the *distribution* is not visible. */
+       design, a 0.5px quantisation of the *distribution* is not visible.
+
+       Both counts are per-theme invariants, not per-theme numbers — see the
+       warning over HYPERSPACE_PALETTES. */
     const WIDTH_STEP = 0.5;
     const buckets = new Map();
     for (let i = 0; i < STAR_COUNT; i++) {
       const rawWidth = Math.random() < 0.85 ? 1 + Math.random() * 1.5 : 2 + Math.random() * 2;
       const width = Math.round(rawWidth / WIDTH_STEP) * WIDTH_STEP;
-      const color = preset.colors[Math.floor(Math.random() * preset.colors.length)];
+      const color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
       const key = `${color}|${width}`;
       let bucket = buckets.get(key);
       if (!bucket) {
@@ -380,7 +427,7 @@ function playHyperspace(onMid, kind = 'planet') {
       // whiteout flash at the peak
       if (intensity > 0.7) {
         const flash = (intensity - 0.7) / 0.3;
-        hyCtx.fillStyle = `rgba(${preset.flashColor}, ${flash * preset.flashMax})`;
+        hyCtx.fillStyle = `rgba(${palette.flashColor}, ${flash * preset.flashMax})`;
         hyCtx.fillRect(0, 0, hyperspaceCanvas.width, hyperspaceCanvas.height);
       }
 

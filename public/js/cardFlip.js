@@ -10,6 +10,9 @@ import { formatDate, makeCardBackTexture } from './cards.js';
 import { removeMemoryFromScene, addMemoryToScene, setOnCardClick, getMeshScreenRect, setDragLocked, renderedStarCount, addFrameCallback, onSceneStop } from './scene.js';
 import { memories, currentMoons, currentMoonIndex } from './state.js';
 import { openAddForm } from './memoryForm.js';
+/* Imported as `themeLabel` for the same reason scene.js and planetPicker.js
+   do it: `label` is already a common local name here for DOM text. */
+import { label as themeLabel } from './theme.js';
 
 const panel = document.getElementById('cardFlipPanel');
 const undoToast = document.getElementById('undoToast');
@@ -273,7 +276,14 @@ function renderContent(memory) {
     html += `<p class="read-date">${formatDate(memory.date)}</p>`;
   }
   if (memory.milestone) {
-    html += `<span class="milestone-badge">✦ milestone</span>`;
+    /* The DOM half of "the badge glyph follows the shape" (Plan 4 Phase 8).
+       The card's own silhouette is cut by cards.js -- a star in solar, a
+       comet in universe -- and this pill is the only other place the app
+       says "milestone" about a memory, so it carries the matching glyph.
+       Escaped like every other string that reaches innerHTML here, even
+       though this one comes from our own registry rather than from a
+       record: the rule is worth more than the exception. */
+    html += `<span class="milestone-badge">${escapeHtml(themeLabel('milestoneBadge'))}</span>`;
   }
   html += `<h2 class="read-title">${escapeHtml(memory.title || 'untitled memory')}</h2>`;
   if (memory.text) {
