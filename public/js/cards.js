@@ -118,6 +118,21 @@ function drawPlainPolaroid(ctx, memory, W, H) {
   roundRect(ctx, 1, 1, W-2, H-2, 14);
   ctx.stroke();
 
+  /* A letter has no picture and never had one: what the photo band used to
+     hold was a flat lilac block with a 60px envelope in it, saying nothing
+     the title above it wasn't already saying (Plan 5 decision 7). It goes,
+     and the card becomes what a letter actually is — writing on blank paper.
+     Audio keeps its ♪ on purpose: you cannot tell a voice memo from a letter
+     by its title, so that glyph still carries information.
+
+     The same isLetterCard() test gates the BACK (decision 3). Two faces of
+     one mesh must agree about what kind of card this is, and the only way to
+     guarantee that is for them to ask the same question. */
+  if (isLetterCard(memory)) {
+    drawCenteredTitleAndDate(ctx, memory, W, H);
+    return;
+  }
+
   const photoArea = { x: 24, y: 24, w: W - 48, h: 400 };
   drawPhotoOrPlaceholder(ctx, memory, photoArea);
 
@@ -133,6 +148,71 @@ function drawPlainPolaroid(ctx, memory, W, H) {
   if (memory.date) {
     ctx.fillText(formatDate(memory.date), W/2, H - 28);
   }
+}
+
+/* The one question both faces ask (Plan 5 Phase 3, decision 3). Letters are
+   the only type that changes; photo and audio cards are untouched on both
+   sides. Written once so the front's branch and the back's cannot drift into
+   disagreeing — a card whose front says "letter" and whose back says
+   "not a letter" would flip into a different object. */
+function isLetterCard(memory) {
+  return memory.type === 'letter';
+}
+
+/* Title over date, centred on the card's midline, on blank paper.
+   Shared by the letter FRONT and by every non-letter card BACK: these were
+   the same drawing written twice the moment the letter front landed, and the
+   back's numbers are the ones that were already proven, so they are the ones
+   kept. Colours are the back's roles too — title in --card-text, date in
+   --card-muted, the same muted role the forms use for their secondary text
+   (in solar it happens to be the identical hex this line used to hardcode). */
+function drawCenteredTitleAndDate(ctx, memory, W, H) {
+  ctx.fillStyle = token('--card-text');
+  ctx.font = '600 42px "Comic Sans MS", "Caveat", cursive, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  wrapText(ctx, memory.title || 'untitled memory', W/2, H/2 - 6, W - 90, 50);
+
+  if (memory.date) {
+    ctx.fillStyle = token('--card-muted');
+    ctx.font = '500 26px "Comic Sans MS", "Caveat", cursive, sans-serif';
+    ctx.fillText(formatDate(memory.date), W/2, H/2 + 62);
+  }
+}
+
+/* The letter's own words on the back of the card (Plan 5 decision 18): the
+   reason to turn a letter over at all. No title — the front carries it — and
+   no date either, which stays on the front alone rather than being said
+   twice. The block fills NEAR the available space without crowding it: eight
+   lines at 46px leading under a 30px face, ink running roughly y=130..500 on
+   a 600-tall card, rather than ten lines packed edge to edge. The `…` is what
+   says there is more, and the read panel after the flip is where the rest is.
+
+   firstBaselineY clears the milestone glyph a milestone back draws at y=66
+   (radius 26, so ink to ~y=92), which is why one set of numbers serves both
+   the plain and the milestone letter back. */
+const LETTER_BACK = { x: 46, firstBaselineY: 160, lineHeight: 46, maxLines: 8 };
+
+function drawLetterBack(ctx, memory, W, H) {
+  const body = (memory.text || '').trim();
+  if (!body) {
+    /* A letter with no text saved yet. Falling back to the shared blank-paper
+       layout keeps the back from being an empty rectangle; note this sits
+       INSIDE the letter branch, so the branch itself is still the plain
+       isLetterCard() test on both faces. */
+    drawCenteredTitleAndDate(ctx, memory, W, H);
+    return;
+  }
+
+  ctx.fillStyle = token('--card-text');
+  ctx.font = '500 30px "Comic Sans MS", "Caveat", cursive, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  wrapTextBlock(
+    ctx, body,
+    LETTER_BACK.x, LETTER_BACK.firstBaselineY,
+    W - LETTER_BACK.x * 2, LETTER_BACK.lineHeight, LETTER_BACK.maxLines
+  );
 }
 
 // Rectangular photo/placeholder block shared by the plain layout.
@@ -454,6 +534,55 @@ export function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
   lines.forEach((l, i) => ctx.fillText(l, x, startY + i * lineHeight));
 }
 
+/* Wrap `text` into at most `maxLines` lines running DOWN from a first
+   baseline at `y`, ending in an ellipsis when there was more than fitted.
+   Returns `{ lines, truncated }`.
+
+   A separate function rather than options on wrapText above, deliberately.
+   wrapText hard-caps at two lines, appends nothing, and centres its block
+   vertically on `y` — and makePortalLabelTexture leans on all three. Adding
+   parameters to it would have re-laid-out every portal plate in the app in
+   order to change one card, and the plates are not what this phase is about.
+
+   The ellipsis is MEASURED, not appended. A line that fit maxWidth on its own
+   can overflow it once the `…` is on the end, so words come off the tail
+   until the whole string fits; a single word longer than maxWidth loses
+   characters instead, since there is no space to cut at.
+
+   Newlines collapse to spaces (the split is on any whitespace). An eight-line
+   excerpt has no room to spend on a blank line, and a word token carrying a
+   "\n" measures wrong. */
+export function wrapTextBlock(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const words = String(text).trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  let truncated = false;
+
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line);
+      line = w;
+      if (lines.length === maxLines) { truncated = true; break; }
+    } else {
+      line = test;
+    }
+  }
+  if (!truncated && line) lines.push(line);
+
+  if (truncated) {
+    let last = lines[lines.length - 1];
+    while (last && ctx.measureText(last + '…').width > maxWidth) {
+      const cut = last.lastIndexOf(' ');
+      last = cut > 0 ? last.slice(0, cut) : last.slice(0, -1);
+    }
+    lines[lines.length - 1] = last + '…';
+  }
+
+  lines.forEach((l, i) => ctx.fillText(l, x, y + i * lineHeight));
+  return { lines: lines.length, truncated };
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T00:00:00');
@@ -737,18 +866,13 @@ export function makeCardBackTexture(memory) {
     ctx.stroke();
   }
 
-  ctx.fillStyle = token('--card-text');
-  ctx.font = '600 42px "Comic Sans MS", "Caveat", cursive, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  wrapText(ctx, memory.title || 'untitled memory', W/2, H/2 - 6, W - 90, 50);
-
-  if (memory.date) {
-    // The same muted role the forms use for their secondary text, which in
-    // solar happens to be the identical hex this line used to hardcode.
-    ctx.fillStyle = token('--card-muted');
-    ctx.font = '500 26px "Comic Sans MS", "Caveat", cursive, sans-serif';
-    ctx.fillText(formatDate(memory.date), W/2, H/2 + 62);
+  // Letters carry their own text here instead of repeating the front's title
+  // and date; everything else keeps the blank-paper layout it always had.
+  // Same test as the front (decision 3) — see isLetterCard.
+  if (isLetterCard(memory)) {
+    drawLetterBack(ctx, memory, W, H);
+  } else {
+    drawCenteredTitleAndDate(ctx, memory, W, H);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
