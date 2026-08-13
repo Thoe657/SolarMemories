@@ -151,7 +151,12 @@ const REGISTRY = {
          two are never wanted apart, and one string is one thing to translate.
          The comet carries U+FE0E (text presentation) for the reason spelled
          out beside universe's copy. */
-      milestoneBadge: '✦ milestone'
+      milestoneBadge: '✦ milestone',
+      /* The add-memory form's checkbox. Same glyph as the badge above and for
+         the same reason — it is the promise of what the card will become, so
+         it has to show the shape the cutout is about to take. Missed by Phase
+         8 only because index.html was outside that phase's file set. */
+      markMilestone: 'mark as milestone ✦'
     },
     backgrounds: [
       'assets/backgrounds/nebula-1.webp',
@@ -242,7 +247,9 @@ const REGISTRY = {
          solar star does. Where no text glyph exists the platform falls back
          to the colour one — still a comet, just not tinted — which is the
          right failure. */
-      milestoneBadge: '☄︎ milestone'
+      milestoneBadge: '☄︎ milestone',
+      // Carries U+FE0E for the reason given above the badge.
+      markMilestone: 'mark as milestone ☄︎'
     },
     // These three files do not exist yet — Phase 3 generates them, as a
     // second family from the same procedural script. The paths are declared
