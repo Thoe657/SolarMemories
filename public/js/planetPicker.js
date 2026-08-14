@@ -602,6 +602,51 @@ const ARM_OUTER_R = 396;
 const ARM_BOX = 800;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+/* ---- Plan 5 Phase 7: structure inside the band ----
+   CLAUDE.md's constraint stands: the arms cannot narrow (ring 3 forces a
+   ~90° occupied span). This phase reaches the reference photo not by
+   narrowing the band but by putting a lit centre, star knots and dust into
+   it. Colours are local constants, same pattern as STARFIELD_PALETTES
+   above — this is a decorative picker-only layer, not a themed content
+   surface, so it does not belong in theme.js's tokens/cardPalette. */
+const SPIRAL_ARM_GRADIENT_ID = 'spiralArmGrad';
+// Stops as [offsetFraction, r, g, b, alpha]. Peaks at 50% of ARM_OUTER_R —
+// close to the ring's own midpoint (ARM_INNER_R..ARM_OUTER_R center is
+// ~53%) — at roughly double the old flat 0.16, per decision 14.
+const SPIRAL_ARM_GRADIENT_STOPS = [
+  [0.00, 170, 195, 255, 0.05],
+  [0.06, 175, 200, 255, 0.10],
+  [0.50, 200, 222, 255, 0.38],
+  [0.80, 180, 202, 255, 0.16],
+  [1.00, 150, 175, 255, 0.02],
+];
+const SPINE_WIDTH_FRACTION = 0.45; // of the arm's own halfWidth
+const SPINE_FILL = 'rgba(210, 228, 255, 0.5)';
+const DUST_FILL = 'rgba(10, 8, 20, 0.45)';
+const DUST_WIDTH_FRACTION = 0.16; // of halfWidth
+const DUST_OFFSET_FRACTION = 0.6; // toward one edge, of halfWidth
+const KNOT_BLUE = '#cfe0ff';
+const KNOT_PINK = '#ff9ec4';
+const KNOT_PINK_SHARE = 0.3;
+// A constant, not a function of planet count — the same galaxy is the same
+// galaxy every time you come back to it (armGeometry's phase/halfWidth do
+// still track the current planet set, same as the arms themselves).
+const STAR_KNOT_COUNT = 40;
+const STAR_KNOT_SEED = 20260814;
+
+// Same generator build-backgrounds.js uses for the deterministic sky, so a
+// knot layout reproduces byte-for-byte across renders rather than reshuffling
+// like a stray Math.random() would.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // Last resolved arm geometry, kept for armLayout() at the bottom of this
 // section. Null until the first spiral render, and forever in solar.
 let lastArmGeometry = null;
@@ -646,8 +691,12 @@ function armGeometry(baseAngles) {
    constant radius instead keeps the boundary simple, and gives the arm a
    rounded end rather than a guillotined one.
 
-   Same ARM_WINDING as the placement formula, by construction. */
-function armPath(centreBase, halfWidth) {
+   Same ARM_WINDING as the placement formula, by construction.
+
+   `bandOffsetDeg` shifts the whole band off the arm centreline before the
+   ± halfWidth is applied — 0 for the arm itself, non-zero for the dust
+   lane that sits toward one edge rather than straddling the centre. */
+function armPath(centreBase, halfWidth, bandOffsetDeg = 0) {
   const STEPS = 48;
   const CAP_STEPS = 10;
   const pt = (r, deg) => {
@@ -656,7 +705,7 @@ function armPath(centreBase, halfWidth) {
     // so this is the same (cos, sin) the .orbit-spin/.orbit-offset pair traces.
     return `${(r * Math.cos(rad)).toFixed(2)} ${(r * Math.sin(rad)).toFixed(2)}`;
   };
-  const centre = (r) => centreBase + ARM_WINDING * r;
+  const centre = (r) => centreBase + ARM_WINDING * r + bandOffsetDeg;
   const points = [];
   // trailing edge, inner radius → outer
   for (let i = 0; i <= STEPS; i++) {
@@ -679,6 +728,36 @@ function armPath(centreBase, halfWidth) {
   return `M${points.join('L')}Z`;
 }
 
+/* Star knots and HII regions (layer 2): points scattered along each arm's
+   centreline, radius sampled uniformly across the band, angular offset drawn
+   from the sum of two uniforms (a cheap triangular distribution) so they
+   cluster toward the spine rather than the edges — the same shape the spine
+   itself traces. Seeded, so the pattern is identical every render for the
+   same geom (same planet set), never reshuffling like Math.random() would. */
+function buildStarKnots(geom) {
+  const rng = mulberry32(STAR_KNOT_SEED);
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('class', 'spiral-knots');
+  const perArm = Math.round(STAR_KNOT_COUNT / ARM_COUNT);
+  for (let a = 0; a < ARM_COUNT; a++) {
+    const centreBase = geom.phase + a * (360 / ARM_COUNT);
+    for (let i = 0; i < perArm; i++) {
+      const r = ARM_INNER_R + rng() * (ARM_OUTER_R - ARM_INNER_R);
+      const deg = centreBase + ARM_WINDING * r + ((rng() + rng()) - 1) * geom.halfWidth * 0.85;
+      const rad = (deg * Math.PI) / 180;
+      const pink = rng() < KNOT_PINK_SHARE;
+      const radius = pink ? 1.2 + rng() * 1.0 : 1.8 + rng() * 2.2;
+      const circle = document.createElementNS(SVG_NS, 'circle');
+      circle.setAttribute('cx', (r * Math.cos(rad)).toFixed(2));
+      circle.setAttribute('cy', (r * Math.sin(rad)).toFixed(2));
+      circle.setAttribute('r', radius.toFixed(2));
+      circle.setAttribute('fill', pink ? KNOT_PINK : KNOT_BLUE);
+      g.appendChild(circle);
+    }
+  }
+  return g;
+}
+
 function buildSpiralArms(geom) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'spiral-arms');
@@ -686,12 +765,70 @@ function buildSpiralArms(geom) {
   svg.setAttribute('width', String(ARM_BOX));
   svg.setAttribute('height', String(ARM_BOX));
   svg.setAttribute('aria-hidden', 'true');
+
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  const grad = document.createElementNS(SVG_NS, 'radialGradient');
+  grad.setAttribute('id', SPIRAL_ARM_GRADIENT_ID);
+  grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+  grad.setAttribute('cx', '0');
+  grad.setAttribute('cy', '0');
+  grad.setAttribute('r', String(ARM_OUTER_R));
+  SPIRAL_ARM_GRADIENT_STOPS.forEach(([offset, r, g, b, a]) => {
+    const stop = document.createElementNS(SVG_NS, 'stop');
+    stop.setAttribute('offset', `${offset * 100}%`);
+    stop.setAttribute('stop-color', `rgba(${r}, ${g}, ${b}, ${a})`);
+    grad.appendChild(stop);
+  });
+  defs.appendChild(grad);
+  svg.appendChild(defs);
+
+  // Layer 1a: the gradient-filled band, brighter at mid-radius. Survives
+  // every tier — same paint cost as the old flat fill it replaces.
+  const glow = document.createElementNS(SVG_NS, 'g');
+  glow.setAttribute('class', 'spiral-arm-glow');
   for (let i = 0; i < ARM_COUNT; i++) {
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('class', 'spiral-arm');
     path.setAttribute('d', armPath(geom.phase + i * (360 / ARM_COUNT), geom.halfWidth));
-    svg.appendChild(path);
+    path.setAttribute('fill', `url(#${SPIRAL_ARM_GRADIENT_ID})`);
+    glow.appendChild(path);
   }
+  svg.appendChild(glow);
+
+  // Layer 3: dust lanes, toward each arm's leading edge, sitting on top of
+  // the glow so they read as filaments across it. Also survives every tier
+  // structurally — visibility is what's gated (see .galaxy-detail in CSS) —
+  // built unconditionally because it's a handful of paths, not 40 circles.
+  const dust = document.createElementNS(SVG_NS, 'g');
+  dust.setAttribute('class', 'spiral-arm-dust');
+  for (let i = 0; i < ARM_COUNT; i++) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'spiral-dust');
+    path.setAttribute('d', armPath(
+      geom.phase + i * (360 / ARM_COUNT),
+      geom.halfWidth * DUST_WIDTH_FRACTION,
+      geom.halfWidth * DUST_OFFSET_FRACTION
+    ));
+    path.setAttribute('fill', DUST_FILL);
+    dust.appendChild(path);
+  }
+  svg.appendChild(dust);
+
+  // Layer 1b: the spine, narrower and brighter, on top of the dust.
+  const spine = document.createElementNS(SVG_NS, 'g');
+  spine.setAttribute('class', 'spiral-arm-spine');
+  for (let i = 0; i < ARM_COUNT; i++) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'spiral-spine');
+    path.setAttribute('d', armPath(geom.phase + i * (360 / ARM_COUNT), geom.halfWidth * SPINE_WIDTH_FRACTION));
+    path.setAttribute('fill', SPINE_FILL);
+    spine.appendChild(path);
+  }
+  svg.appendChild(spine);
+
+  // Layer 2: star knots, on top of everything so they stay points.
+  svg.appendChild(buildStarKnots(geom));
+
   return svg;
 }
 
@@ -708,6 +845,23 @@ function applyGalaxyMotion() {
 }
 applyGalaxyMotion();
 onTierChange(applyGalaxyMotion);
+
+/* Decision 15: star knots and dust lanes (the two compositing-heavy layers
+   this phase adds) are gated off at the low tier — Plan 3 exists entirely
+   for low-end PCs, and the picker was, until this phase, the one screen
+   rendering with zero WebGL draw calls. The arm gradient and spine are NOT
+   gated: they replace a fill of identical cost, so every tier keeps them.
+   Same condition as applyGalaxyMotion, same re-registration requirement —
+   a mid-session downgrade must hide these without a full SVG rebuild, which
+   is why this is a CSS class toggle rather than conditional construction. */
+function applySpiralDetail() {
+  orbitsContainer.classList.toggle(
+    'galaxy-detail',
+    themeFlag('spiralPicker') && currentTier() !== 'low'
+  );
+}
+applySpiralDetail();
+onTierChange(applySpiralDetail);
 
 export function renderSolarSystem() {
   orbitsContainer.innerHTML = '';
