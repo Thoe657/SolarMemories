@@ -238,8 +238,20 @@ function drawPhotoOrPlaceholder(ctx, memory, area) {
   }
 }
 
-// Circular photo/placeholder inset used by the milestone star card, where
-// content has to stay near the shape's centre to avoid the star's points.
+/* Circular photo/placeholder inset used by the milestone card, where content
+   has to stay near the shape's bright end to avoid the star's points or the
+   comet's tail.
+
+   A MILESTONE LETTER KEEPS THE DISC AND LOSES THE GLYPH (Plan 5 decision 17).
+   Phase 3 took the envelope off letter cards, and this is the one place it
+   survived — a milestone letter is the rare card that is both. The disc itself
+   is not decoration and does not go with it: the comet's head is built around
+   this medallion and milestoneLayout hangs the title and date off its radius,
+   so removing it would move the text. The blank tinted disc is the answer to
+   both — the geometry stays, the icon that said nothing goes.
+
+   Audio keeps its ♪ for the same reason it kept it on a plain card: a title
+   cannot tell you something is a recording. */
 function drawCircularPhotoOrPlaceholder(ctx, memory, cx, cy, r) {
   if (memory.type === 'photo' && memory.photoImg) {
     ctx.save();
@@ -256,12 +268,13 @@ function drawCircularPhotoOrPlaceholder(ctx, memory, cx, cy, r) {
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = paint.placeholderIcon;
-    ctx.font = '52px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const icon = memory.type === 'audio' ? '♪' : '✉';
-    ctx.fillText(icon, cx, cy);
+    if (memory.type === 'audio') {
+      ctx.fillStyle = paint.placeholderIcon;
+      ctx.font = '52px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('♪', cx, cy);
+    }
   }
 }
 
@@ -302,13 +315,20 @@ function buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy) {
      or the photo medallion inside it stops being one, and outerRx/outerRy
      are not equal (232 vs 272 on a real card).
 
-   The construction is a half-circle plus two curves: the arc covers the
-   head's far side (from +perpendicular round through -unit to
-   -perpendicular, i.e. exactly pi of turn), then one quadratic out to the
-   tip and one back, each bowed outward so the tail flares rather than
-   reading as a triangle. Because the arc is defined off the head->tip
-   direction rather than off fixed angles, the shape is correct for any tip
-   position — nothing here assumes the up-and-left aim below. */
+   The construction is a half-circle plus two curves and a forked end: the arc
+   covers the head's far side (from +perpendicular round through -unit to
+   -perpendicular, i.e. exactly pi of turn), then one edge sweeps out to the
+   fork and one comes back, each bowed inward so the tail necks away from the
+   head rather than reading as a teardrop. Because everything past the arc is
+   expressed in the head->tip frame (see cometPoint) rather than in fixed
+   angles, the shape is correct for any tip position — nothing here assumes
+   the up-and-left aim below.
+
+   ORIENTATION IS DELIBERATE AND UNMIRRORED (Plan 5 Phase 4, decision 2). The
+   reference image is our mirror image, head lower-LEFT; mirroring was
+   considered and declined, because what is being replicated is the shape and
+   not the aim. So COMET_HEAD_U/V and COMET_TIP_U/V keep their signs, and
+   every anchor in milestoneLayout stays where it was. */
 const COMET_HEAD_SCALE = 1.14;   // head radius, as a multiple of innerRx
 const COMET_HEAD_U = 0.17;       // head centre: right of cx, in outerRx
 const COMET_HEAD_V = 0.18;       // head centre: below cy, in outerRy
@@ -323,6 +343,36 @@ const COMET_TIP_V = -0.88;       // tail tip: above cy, in outerRy
    as a comet at card size. Mid-tail half-width goes from 107px (outward) to
    77px (inward) on a 175px head. */
 const COMET_TAIL_BOW = -0.12;
+/* What fraction of that bow the NEAR-HEAD control carries (Plan 5 Phase 4).
+   Each tail edge became a cubic purely so the inward pull can ease in: the
+   control by the head gets COMET_TAIL_BOW * this, the one by the fork gets
+   all of it. The first cut of the comet applied the full bow evenly, which
+   pinched the tail hardest exactly where it leaves the head and left a waist
+   too thin to carry the shape. Measured on a real card, this moves the edge's
+   inward deviation from the chord to 5.6 / 10.2 / 9.7 px at quarter / half /
+   three-quarters of the edge (an even cubic is 11.8 / 15.7 / 11.8): the first
+   half is eased, the outer half stays concave, which is the half that does
+   the work of not being a teardrop. */
+const COMET_WAIST_EASE = 0.3;
+/* The forked tip (Plan 5 Phase 4). Each prong is [t, w] in the head->tip
+   frame: t along the axis as a fraction of the head->tip distance, w across
+   it in head radii. Both are derived from the same tip vector, so the fork
+   travels with COMET_TIP_U/V and cannot drift off-axis.
+
+   ORDERED BY INCREASING w, because that is the order the outline visits them
+   in — the edge arrives from the -perpendicular side of the head and leaves
+   on the +perpendicular side. UNEQUAL LENGTHS on purpose: a fork of three
+   equal prongs reads as a fishtail. The middle one runs to the full tip
+   (t = 1) and the flanking two fall short by different amounts. */
+const COMET_PRONGS = [[0.90, -0.32], [1.00, -0.02], [0.78, 0.30]];
+/* How far back the notch between two prongs sits, in the same t units,
+   measured from the SHORTER of the pair. Off the shorter one rather than the
+   mean because a notch that clears the shorter prong by a fixed amount opens
+   the same visible V whatever the pair's length difference. At 0.16 the mask
+   is genuinely open — three separate spans across the axis at t = 0.8, two at
+   0.7 and 0.9 — so the fork survives rasterisation instead of closing into a
+   ragged point. */
+const COMET_NOTCH_PULL = 0.16;
 
 // The head is wanted by both the path and the layout that fills it, and a
 // second copy of the arithmetic is exactly the kind of thing that drifts.
@@ -334,20 +384,48 @@ function cometHead(cx, cy, outerRx, outerRy, innerRx) {
   };
 }
 
-function buildCometPath(cx, cy, outerRx, outerRy, innerRx, innerRy) {
+// The head->tip frame the fork lives in: t runs along the axis (1 = the tip
+// COMET_TIP_U/V names), w runs across it in head radii (+/-1 = the head's own
+// width). Everything past the arc is written in these two numbers, which is
+// what keeps the prongs on-axis for free.
+function cometFrame(cx, cy, outerRx, outerRy, innerRx) {
   const { hx, hy, r } = cometHead(cx, cy, outerRx, outerRy, innerRx);
-  const tipX = cx + outerRx * COMET_TIP_U;
-  const tipY = cy + outerRy * COMET_TIP_V;
-
-  // unit vector head -> tip, and the perpendicular the tail's width runs along
-  const dx = tipX - hx, dy = tipY - hy;
+  const dx = (cx + outerRx * COMET_TIP_U) - hx;
+  const dy = (cy + outerRy * COMET_TIP_V) - hy;
   const len = Math.hypot(dx, dy) || 1;
-  const px = -(dy / len), py = dx / len;
+  const ux = dx / len, uy = dy / len;      // along the axis, head -> tip
+  const px = -uy, py = ux;                 // across it, the tail's width
+  return {
+    hx, hy, r, px, py,
+    at: (t, w) => [hx + ux * len * t + px * r * w, hy + uy * len * t + py * r * w]
+  };
+}
+
+/* One tail edge, from S to E, as a cubic whose two control points carry
+   different amounts of the inward bow: `ease` of it next to the head, all of
+   it next to the fork. `sigma` is which side of the axis this edge is on
+   (-1 = the side the outline leaves the head on, +1 = the side it returns
+   along), and it only ever flips the sign of the offset — the near control is
+   the one nearer the HEAD on both edges, which is why the two branches read
+   the pair in opposite order. */
+function cometEdge(path, S, E, px, py, bow, sigma) {
+  const near = sigma * bow * COMET_WAIST_EASE, far = sigma * bow;
+  const d1 = sigma > 0 ? far : near, d2 = sigma > 0 ? near : far;
+  path.bezierCurveTo(
+    S[0] + (E[0] - S[0]) / 3 + px * d1, S[1] + (E[1] - S[1]) / 3 + py * d1,
+    S[0] + (E[0] - S[0]) * 2 / 3 + px * d2, S[1] + (E[1] - S[1]) * 2 / 3 + py * d2,
+    E[0], E[1]
+  );
+}
+
+function buildCometPath(cx, cy, outerRx, outerRy, innerRx, innerRy) {
+  const { hx, hy, r, px, py, at } = cometFrame(cx, cy, outerRx, outerRy, innerRx);
 
   const ax = hx + px * r, ay = hy + py * r;   // where the near tail edge meets the head
   const bx = hx - px * r, by = hy - py * r;   // ... and the far one
   const startAngle = Math.atan2(ay - hy, ax - hx);
   const bow = r * COMET_TAIL_BOW;
+  const prongs = COMET_PRONGS.map(([t, w]) => at(t, w));
 
   const path = new Path2D();
   path.moveTo(ax, ay);
@@ -355,8 +433,15 @@ function buildCometPath(cx, cy, outerRx, outerRy, innerRx, innerRy) {
   // +perpendicular passes through -unit, i.e. the side of the head facing
   // away from the tail — which is the half we want to keep.
   path.arc(hx, hy, r, startAngle, startAngle + Math.PI, false);
-  path.quadraticCurveTo((bx + tipX) / 2 - px * bow, (by + tipY) / 2 - py * bow, tipX, tipY);
-  path.quadraticCurveTo((tipX + ax) / 2 + px * bow, (tipY + ay) / 2 + py * bow, ax, ay);
+  cometEdge(path, [bx, by], prongs[0], px, py, bow, -1);
+  // the fork: out to each prong in turn, dipping to a notch in between
+  for (let i = 1; i < COMET_PRONGS.length; i++) {
+    const [pt, pw] = COMET_PRONGS[i - 1], [nt, nw] = COMET_PRONGS[i];
+    const notch = at(Math.min(pt, nt) - COMET_NOTCH_PULL, (pw + nw) / 2);
+    path.lineTo(notch[0], notch[1]);
+    path.lineTo(prongs[i][0], prongs[i][1]);
+  }
+  cometEdge(path, prongs[prongs.length - 1], [ax, ay], px, py, bow, 1);
   path.closePath();
   return path;
 }
@@ -371,6 +456,34 @@ function buildMilestonePath(shape, cx, cy, outerRx, outerRy, innerRx, innerRy) {
   return shape === 'comet'
     ? buildCometPath(cx, cy, outerRx, outerRy, innerRx, innerRy)
     : buildStarPath(cx, cy, outerRx, outerRy, innerRx, innerRy);
+}
+
+/* The ink a milestone is marked in, chosen by SHAPE (Plan 5 Phase 4).
+   A star is gold and a comet is ice-blue, which reverses a Plan 4 decision:
+   theme.js used to say the gold was "a signal about the memory, not a
+   property of the surface" and so identical in both themes. Living with it
+   said otherwise — the gold was the last warm thing left in a cool theme and
+   read as foreign. Solar's star is untouched and stays gold.
+
+   Read ONCE per card, in one place, because these six values are spent across
+   two faces: five on the front and two on the back. Resolving them
+   independently is how the front and the back come to disagree about what
+   colour a milestone is. Keyed on shape rather than on the theme name so the
+   colour cannot get out of step with the silhouette it is tracing, and the
+   gold is the fallback when a theme carries no comet family — a theme that
+   flipped `cometMilestones` on without adding one still draws. */
+function milestonePalette(shape) {
+  const p = cardPalette();
+  if (shape !== 'comet' || !p.cometLine) {
+    return {
+      glow: p.milestoneGlow, glowFade: p.milestoneGlowFade, ring: p.milestoneRing,
+      line: p.milestoneLine, inner: p.milestoneInner, date: p.milestoneDate
+    };
+  }
+  return {
+    glow: p.cometGlow, glowFade: p.cometGlowFade, ring: p.cometRing,
+    line: p.cometLine, inner: p.cometInner, date: p.cometDate
+  };
 }
 
 /* Where the medallion and the two captions sit inside the silhouette.
@@ -432,22 +545,23 @@ function drawMilestoneCard(ctx, memory, W, H) {
   const innerRx = outerRx * 0.66, innerRy = outerRy * 0.66;
   const body = buildMilestonePath(shape, cx, cy, outerRx, outerRy, innerRx, innerRy);
   const lay = milestoneLayout(shape, cx, cy, outerRx, outerRy, innerRx, innerRy);
-  const paint = cardPalette();
+  const paint = milestonePalette(shape);
 
   ctx.save();
   ctx.fillStyle = token('--card-bg');
   ctx.fill(body);
   ctx.clip(body);
 
-  // warm glow behind the photo so the shape reads as "lit up", not just an
+  // glow behind the photo so the shape reads as "lit up", not just an
   // outline, even out toward the star's points or along the comet's tail
-  // where the photo doesn't reach. The milestone gold stays gold in both
-  // themes -- it says something about the memory, not about the surface --
-  // so only its strength changes. It is centred on whatever the shape's
-  // bright end is: the star's middle, the comet's head.
+  // where the photo doesn't reach. Warm behind a star, cold behind a comet
+  // (see milestonePalette). It is centred on whatever the shape's bright end
+  // is: the star's middle, the comet's head. Both stops come from the palette
+  // -- the far one used to be a gold literal, which would have left a warm
+  // halo bleeding out of an ice-blue comet.
   const glow = ctx.createRadialGradient(lay.glowCx, lay.glowCy, 30, lay.glowCx, lay.glowCy, lay.glowR);
-  glow.addColorStop(0, paint.milestoneGlow);
-  glow.addColorStop(1, 'rgba(255, 221, 150, 0)');
+  glow.addColorStop(0, paint.glow);
+  glow.addColorStop(1, paint.glowFade);
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, W, H);
 
@@ -456,7 +570,7 @@ function drawMilestoneCard(ctx, memory, W, H) {
   // by the points/notches or by the tail
   drawCircularPhotoOrPlaceholder(ctx, memory, lay.photoCx, lay.photoCy, lay.photoR);
 
-  ctx.strokeStyle = paint.milestoneRing;
+  ctx.strokeStyle = paint.ring;
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.arc(lay.photoCx, lay.photoCy, lay.photoR, 0, Math.PI * 2);
@@ -468,7 +582,7 @@ function drawMilestoneCard(ctx, memory, W, H) {
   ctx.textBaseline = 'alphabetic';
   wrapText(ctx, memory.title || 'untitled memory', lay.textCx, lay.titleY, 240, 36);
 
-  ctx.fillStyle = paint.milestoneDate;
+  ctx.fillStyle = paint.date;
   ctx.font = '500 22px "Comic Sans MS", "Caveat", cursive, sans-serif';
   if (memory.date) {
     ctx.fillText(formatDate(memory.date), lay.textCx, lay.dateY);
@@ -478,12 +592,12 @@ function drawMilestoneCard(ctx, memory, W, H) {
 
   // gold double-border, echoing the old rectangular treatment but traced
   // along the silhouette instead
-  ctx.strokeStyle = paint.milestoneLine;
+  ctx.strokeStyle = paint.line;
   ctx.lineWidth = 9;
   ctx.stroke(body);
 
   const inner = buildMilestonePath(shape, cx, cy, outerRx - 10, outerRy - 10, innerRx - 6, innerRy - 6);
-  ctx.strokeStyle = paint.milestoneInner;
+  ctx.strokeStyle = paint.inner;
   ctx.lineWidth = 3;
   ctx.stroke(inner);
 }
@@ -841,7 +955,13 @@ export function makeCardBackTexture(memory) {
   ctx.fill();
 
   if (memory.milestone) {
-    ctx.strokeStyle = paint.milestoneLine;
+    // Same shape and the same ink as the front, resolved through the same two
+    // functions (Plan 5 Phase 4) — the back cannot end up gold while the front
+    // is blue, or vice versa, because neither face picks a colour of its own.
+    const shape = milestoneShape();
+    const mile = milestonePalette(shape);
+
+    ctx.strokeStyle = mile.line;
     ctx.lineWidth = 8;
     roundRect(ctx, 4, 4, W-8, H-8, 14);
     ctx.stroke();
@@ -857,8 +977,8 @@ export function makeCardBackTexture(memory) {
        the comet's head reaches ~0.83 of it and its tail ~0.85. Left as is:
        matching extents exactly would mean a second set of literals here for
        one glyph seen for 400ms at a glancing angle. */
-    ctx.fillStyle = paint.milestoneLine;
-    ctx.fill(buildMilestonePath(milestoneShape(), W / 2, 66, 26, 26, 10, 10));
+    ctx.fillStyle = mile.line;
+    ctx.fill(buildMilestonePath(shape, W / 2, 66, 26, 26, 10, 10));
   } else {
     ctx.strokeStyle = paint.rim;
     ctx.lineWidth = 2;

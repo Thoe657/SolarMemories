@@ -212,6 +212,11 @@ const REGISTRY = {
       placeholderAudio: '#dceee6',
       placeholderIcon: 'rgba(0,0,0,0.35)',
       milestoneGlow: 'rgba(255, 221, 150, 0.55)',
+      // The far stop of that same glow. It was a literal inside cards.js until
+      // Plan 5 Phase 4; it lives here now so a theme whose milestone ink is not
+      // gold cannot end up fading out through gold. Solar's value is the exact
+      // literal it replaced, which is what keeps this theme pixel-identical.
+      milestoneGlowFade: 'rgba(255, 221, 150, 0)',
       milestoneRing: 'rgba(201, 154, 46, 0.85)',
       milestoneLine: '#c99a2e',
       milestoneInner: 'rgba(255, 217, 160, 0.7)',
@@ -363,21 +368,59 @@ const REGISTRY = {
       // dropped below it (2.97:1 -> 3.67:1 against the card).
       '--danger': '#ffe0e0'
     },
-    /* The milestone gold stays gold in both themes — it is a signal about
-       the memory, not a property of the surface, and decision 9 says cards
-       change only by token and by milestone *shape* (which is Phase 8's).
-       What changes is its direction: dark gold ink on cream becomes light
-       gold ink on graphite. */
+    /* REVERSAL (Plan 5 Phase 4, decisions 7 and 13). This block used to say the
+       milestone gold stayed gold in both themes — "a signal about the memory,
+       not a property of the surface". Living with the skin overturned it: the
+       gold was the last warm thing left in a cool theme, and on a graphite card
+       under a blue-black sky it read as foreign rather than as special. The
+       comet is now ice-blue. Recorded as a reversal on purpose, so this file and
+       PLAN_ARCHIVE.md do not quietly contradict each other. SOLAR'S STAR IS
+       UNTOUCHED AND STAYS GOLD — the decision was about this theme.
+
+       The milestone* family below is still live: cards.js's milestonePalette()
+       falls back to it if `cometMilestones` is ever flipped off here, so the two
+       families are the two silhouettes' inks, not dead weight and a replacement.
+
+       WHY A NEW FAMILY RATHER THAN --accent (#a8c4ff). Reuse would have been
+       free, and wrong: what makes a milestone read as special is that its marker
+       colour appears NOWHERE else on the card. Painted in the accent, a
+       milestone becomes a slightly fancier normal card. So these are their own
+       blues — brighter (every one above --accent's L 0.5502) and cooler (hue
+       ~205 against its 221).
+
+       MEASURED, NOT PICKED. The universe palette window is about one percent
+       wide, so every value here was checked against the card (#707688, L 0.1818)
+       and none ships below the gold it replaces:
+
+         cometGlow  1.796 : 1  (gold 1.778)   cometLine   3.285 : 1  (gold 3.182)
+         cometRing  3.097 : 1  (gold 2.956)   cometInner  3.067 : 1  (gold 3.018)
+         cometDate  3.866 : 1  (gold 3.632)
+
+       The date is the binding one, and 4.5:1 is NOT reachable above this card by
+       any colour at all: pure white is 4.53:1, so 4.5 needs L >= 0.9931 and only
+       white-to-two-decimals clears it. The shipped gold sat at 3.632. #dbf0ff is
+       the most saturated ice blue that improves on that, and improving on it is
+       the bar this phase could actually hold. If the date ever has to clear 4.5,
+       it has to become --card-text white and stop being a colour. */
     cardPalette: {
       rim: 'rgba(206, 221, 255, 0.55)',
       placeholderLetter: '#4c4560',
       placeholderAudio: '#3f5a50',
       placeholderIcon: 'rgba(233, 238, 255, 0.5)',
       milestoneGlow: 'rgba(255, 221, 150, 0.42)',
+      milestoneGlowFade: 'rgba(255, 221, 150, 0)',
       milestoneRing: 'rgba(255, 214, 130, 0.9)',
       milestoneLine: '#ffd27a',
       milestoneInner: 'rgba(255, 240, 210, 0.75)',
-      milestoneDate: '#ffe3ac'
+      milestoneDate: '#ffe3ac',
+      // The comet's ink. cometLine is what milestonePalette() tests for, so it
+      // is the one entry that must exist for this family to be picked up at all.
+      cometGlow: 'rgba(150, 212, 255, 0.52)',
+      cometGlowFade: 'rgba(150, 212, 255, 0)',
+      cometRing: 'rgba(175, 225, 255, 0.95)',
+      cometLine: '#b7e1ff',
+      cometInner: 'rgba(232, 246, 255, 0.75)',
+      cometDate: '#dbf0ff'
     },
     nebulaNames: NEBULA_NAMES,
     features: {
