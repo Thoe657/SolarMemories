@@ -215,8 +215,12 @@ colour tokens, the nebula-name pool and feature flags; exports `currentTheme()`,
 `planetPicker.js`
 (solar system rendering, hyperspace transition, new/edit-planet forms, starfield
 parallax + shooting stars), `memoryForm.js` (add-memory form, photo/audio
-compression), `entryScreen.js` (one-time nebula start screen, 2D canvas, gates the
-already-initializing picker), `cardFlip.js` (click a card → it flips in 3D, then a DOM
+compression), `entryScreen.js` (the app's menu — since Plan 5 Phase 1 a **static,
+theme-invariant** sky image, not the old per-theme drifting-blob canvas; reachable
+both at load and back from a planet via the picker's `#exitToMenuBtn`, so it is no
+longer one-time. Phase 2 makes a changed theme/quality choice `location.reload()`
+*under* the still-visible menu rather than repaint live — see the theme notes
+below), `cardFlip.js` (click a card → it flips in 3D, then a DOM
 panel fades in with the full content, replacing the old disconnected read-overlay
 modal), `motionPreference.js` (the sole remaining export, `prefersReducedMotion()`,
 reads the OS-level `prefers-reduced-motion` media query — `scene.js` uses it to slow
@@ -260,11 +264,18 @@ Perf/asset notes (mostly Plan 3 — these are load-bearing and easy to undo by a
   **use `?media=photo`, not the bare record**, or a card's picture drags its audio down
   with it. `memoryForm.js`'s edit mode must fetch the full record first and refuses to
   open if it can't: saving a slim record would strip the photo off a real memory.
-- **Every card shares one `PlaneGeometry`**, so `disposeCardMesh` must not dispose
-  geometry, and must skip anything flagged `userData.shared`. The texture cache is an
-  **LRU capped at 64** whose eviction hands ownership over — it clears the `cached` flag
-  and disposes only if no visible mesh still holds the texture. `updateMemoryInScene()`
-  still evicts on edit so a cache hit always reflects saved content.
+- **Every card shares one of two `PlaneGeometry`s** (Plan 5 Phase 5 added the second):
+  the normal card rectangle, and that same rectangle at `MILESTONE_MESH_SCALE` (1.10x)
+  for a milestone. `geometryFor(memory)` picks between them. Both carry
+  `userData.shared`, so `disposeCardMesh` must not dispose geometry and must skip
+  anything so flagged — the rule is unchanged in substance, just no longer singular.
+  A milestone is sized by a **second geometry, not `mesh.scale`**, because
+  `cardFlip.js` tweens `mesh.scale` during a flip and hard-resets it to `(1,1,1)` on
+  settle — a scaled milestone would look right until first flipped, then shrink back
+  permanently. The texture cache is an **LRU capped at 64** whose eviction hands
+  ownership over — it clears the `cached` flag and disposes only if no visible mesh
+  still holds the texture. `updateMemoryInScene()` still evicts on edit so a cache hit
+  always reflects saved content.
 - **Card texture size comes from the tier** (512x600 / 512x600 / 384x450). Everything in
   `cards.js` is drawn in a fixed 512x600 reference space with one `ctx.scale`, so the high
   tier is an identity transform and stays pixel-identical. Keep new drawing code in that
@@ -294,6 +305,13 @@ Theme notes (Plan 4 — same status as the perf notes above: load-bearing, easy 
 - **`cards.js` reads its colours from `theme.js` and must never re-hardcode them.** It
   used to hold literal copies of the same hexes the CSS variables held; the canvas half of
   dark mode is entirely "stop doing that". A new fill or stroke goes through `tokens()`.
+- **A `type: 'letter'` memory gets its own front and back (Plan 5 Phase 3)**: the front
+  centres title + date on blank card paper (no photo placeholder), the back leads with the
+  letter text via a new `wrapTextBlock()` helper that truncates with a measured `…`.
+  **`wrapTextBlock` is deliberately separate from the existing `wrapText`**, which hard-caps
+  at 2 lines with no ellipsis and is also what draws the portal caption plate
+  (`makePortalLabelTexture`) — changing `wrapText`'s behaviour for letters would silently
+  change portal captions too.
 - **The `universe` palette window is about one percent wide.** Card `#707688` (L 0.1818)
   and pure-white text are load-bearing to two decimals: they are the only pair satisfying
   both binding criteria at once (body text 4.53:1 above the card, card 3.02–3.07:1 above
@@ -326,7 +344,49 @@ Theme notes (Plan 4 — same status as the perf notes above: load-bearing, easy 
   colours per theme; the presets hold the effect's *shape*, identical in both.
 - **The comet's head radius comes from `innerRx` alone**, never `innerRy`, or the circular
   photo medallion inside it stops being circular. Its tail edges bow *inward*; bowed
-  outward the shape reads as a fat teardrop.
+  outward the shape reads as a fat teardrop. **Since Plan 5 Phase 4 the tip is forked**
+  (`COMET_PRONGS`, 2-3 unequal points derived off the same head→tip axis via
+  `cometFrame()`) rather than a single point — orientation is unchanged, only the tip.
+- **Milestone gold is no longer identical in both themes — this reverses a stated Plan 4
+  decision, on purpose (Plan 5 Phase 4).** Solar's star stays gold; the universe comet's
+  ink is a dedicated ice-blue family (`cardPalette`'s comet colours in `theme.js`,
+  selected once by `milestonePalette(shape)` in `cards.js` so the front and back can't
+  drift apart) — reusing `--accent` was considered and rejected because the marker colour
+  has to appear nowhere else on the card to read as special. Every blue is measured
+  against `#707688` (the one-percent-wide palette window above still applies).
+- **A milestone card is measurably bigger, not just differently shaped (Plan 5 Phase 5).**
+  A milestone silhouette was ~40% of a plain card's area (0.42 star / 0.37 comet inside the
+  identical rectangle every card shares) — fattened to ~0.72 coverage (solar) and scaled
+  onto the second `PlaneGeometry` above at 1.10x, for **~1.7x** apparent area overall. 1.10x
+  was chosen conservatively against two-row-mode vertical headroom (~1.16x before rows'
+  rectangles touch); a `TWO_ROW_HEIGHTS` widen (2.2 → 2.5 units apart) was held in reserve
+  and, **judged in Plan 5 Phase 9 by screenshot on a real 28-star two-row moon in both
+  themes, was not needed** — milestones read clearly larger than their row neighbours with
+  visible clearance on both axes. Left at 1.10x.
+- **The accretion ring sits flush against the horizon, with a lensed halo (Plan 5 Phase 6).**
+  `makeBlackHoleTexture` used to leave a 36px fully-transparent gap between the horizon
+  (r=84px) and the ring's first light — re-spec'd so the ring starts at ~0.36 of `RING_RX`
+  (the horizon itself). A second, near-circular (`RY/RX≈0.9`) annulus drawn *behind* the
+  horizon adds the lensed arc that shows only outside the disc. No `shadowBlur`/`ctx.filter`
+  anywhere in it — every soft edge is a gradient alpha stop, since this texture rebuilds on
+  every portal update. A locked portal loses the ring **and** the halo, keeping only the
+  horizon and a dim photon ring — "not formed yet" by structure, not by fading.
+- **The spiral's arms carry real art now, not a flat fill (Plan 5 Phase 7).** An SVG
+  gradient + narrower high-alpha "spine" per arm, ~40 seeded-mulberry32 star knots
+  (`.spiral-knots`) and dust lanes (`.spiral-arm-dust`), plus maddi's `.sun` becoming a
+  diffuse cream-to-amber galactic-core bulge in `universe` only (still pulsing, still
+  labelled dead centre). **Knots and dust are gated off below `currentTier() !== 'low'`**
+  via a `galaxy-detail` class toggle (`applySpiralDetail()`, registered on `onTierChange`)
+  — the arm gradient/spine are not gated, since they replace a fill of identical cost.
+  Verified in Phase 9 that a *live* tier downgrade (not just a load forced low) actually
+  hides both layers, not merely a class that CSS happens to not act on at load. Determinism
+  is load-bearing here the same way it is for the moon-dot halo below: knots come from a
+  seeded PRNG so `renderSolarSystem()`'s every-create/delete/return rebuild reproduces them.
+- **The "new galaxy" icon sits at a fixed θ=90° (straight down) from the core, not on the
+  spiral (Plan 5 Phase 8).** `NEW_PLANET_SPIRAL_RADIUS`/`NEW_PLANET_SPIRAL_THETA` skip the
+  `ARM_WINDING` term for that one icon, and the arm-fit's `baseAngles` no longer include a
+  literal for it — a UI affordance is not a constraint the arms should be shaped around.
+  Solar's button is untouched and still orbits.
 - **Anything static built on `Math.random()` in the picker will reshuffle.**
   `renderSolarSystem()` re-runs on every create, delete and return from a planet. Solar's
   moon dots get away with a random start phase only because they are moving; the
@@ -481,7 +541,7 @@ is still running — stop it first, and if the worktree registration is left beh
 
 ## Development plan
 
-Four plans are complete and merged to `main`, condensed in
+Five plans are complete and merged to `main`, condensed in
 [docs/PLAN_ARCHIVE.md](docs/archive/PLAN_ARCHIVE.md): Plan 1, phases 0–14 (file
 structure split, validation, per-record storage, archive-not-delete, backups, and a run
 of feature/perf phases), and Plan 2, "Galaxy scaling — stars & planets," phases 1–12
@@ -512,17 +572,28 @@ byte-identical throughout — and its own risk model was wrong twice in ways wor
 Phase 6's viewport-drift risk was structurally absent, and Phase 3's "reads flat" was
 near-total absence of colour rather than insufficient detail.
 
+Plan 5, "Polish pass on the universe theme," phases 1–9, is **complete and merged to
+`main`**, in the same archive. A user-driven punch list against Plan 4's shipped skin:
+exit-to-menu and settings-apply-on-enter (two navigation gaps Plan 4 left open), letter
+cards, a reshaped forked-tail comet with its own ice-blue milestone ink (reversing Plan
+4's "gold is identical in both themes" on the user's instruction), fattened milestones on
+a second shared geometry, a gap-closed accretion ring with a lensed halo, real spiral art
+(arm gradient/spine, seeded star knots, dust lanes, a galactic-core bulge), and the
+new-galaxy icon moved off the arms. Like Plan 4, it is a **zero-write plan** and stayed
+one: the Phase 9 sweep's manifest hash (`find data -type f | sort | xargs sha256sum |
+sha256sum`) matched the plan's own start-of-plan baseline exactly, 62/62 files. The four
+files that differ from the *older* `docs/harness/data-baseline.txt` predate Plan 5
+entirely — they are the same user-made edits from 2026-08-13 this file already
+documents below, not new drift.
+
 [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md) lists candidate future work (PWA/service worker,
-native macOS packaging, entry-screen Exit button, PIN/passcode lock, PDF keepsake export,
-manual card reordering, self-hosting the two web fonts, a moving comet object, hyperspace
-lensing, plus two gaps Plan 4's sweep found) that is **not yet scoped** —
-brainstorm/discuss before turning any item there into a real phase; don't treat it as
-pre-approved.
+native macOS packaging, PIN/passcode lock, PDF keepsake export, manual card reordering,
+self-hosting the two web fonts, a moving comet object, hyperspace lensing, plus a couple
+of gaps found along the way) that is **not yet scoped** — brainstorm/discuss before
+turning any item there into a real phase; don't treat it as pre-approved.
 
 [docs/PLAN.md](docs/PLAN.md) is reused as the spec for whichever plan is currently
-active. **It currently holds Plan 5, "Polish pass on the universe theme" — nine phases,
-scoped and grilled, not started.** (Plan 4 ran from its own file, since deleted; `PLAN.md`
-was empty between the two, which is what this line used to say.) A plan that has landed is
+active. **It is empty — nothing is scoped right now.** A plan that has landed is
 condensed into `PLAN_ARCHIVE.md`, so an empty `PLAN.md` never means there is no project
 history.
 
