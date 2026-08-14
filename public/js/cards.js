@@ -820,14 +820,37 @@ export function makeMoonSurfaceTexture({ color = '#ffd9a0', locked = false }) {
    region, the same trick the milestone star card uses.
 
    Draw order is the whole effect. The far side of the accretion disc is laid
-   down first, then the event horizon over it, then the near side over that —
-   so the ring passes behind the hole at the top and in front at the bottom,
-   which is what makes it read as a disc seen at an angle rather than a
-   flat halo. The ellipse's 0.34 squash is that viewing angle.
+   down first, then the lensed halo, then the event horizon over both, then the
+   near side over that — so the ring passes behind the hole at the top and in
+   front at the bottom, which is what makes it read as a disc seen at an angle
+   rather than a flat halo. The ellipse's 0.34 squash is that viewing angle.
 
-   A locked portal gets the horizon and its glow and NO ring at all. The plan's
-   reasoning: the ring is what marks a real one, so its absence says "not
-   formed yet" — a better sentence than "greyed out". */
+   Plan 5 Phase 6 fixed a measured defect and added the arc:
+
+   - The ring used to start at 0.52 of RING_RX (120.6px) while the horizon ends
+     at 84px, so there was a 36px annular dead gap all the way round — the ring
+     floated off the hole instead of sitting around it. Its stops are now
+     written in absolute texture pixels through `ringStop()` precisely so that
+     relationship stays legible: first light AT the horizon, peak by ~100px.
+     Vertically the 0.34 squash tucks that inner edge behind the disc, which is
+     why the gap only ever showed at the left and right extremes.
+   - The near half of the disc crosses in *front* of the lower interior of the
+     horizon (the hole's face is only black above the disc line). That is not a
+     bug and predates this phase — it is what an edge-on disc does.
+   - The lensed halo is a second, near-circular (0.9) annulus hugging the
+     horizon at lower alpha, drawn BEHIND the horizon so it only shows outside
+     it. Horizontally the accretion ring swamps it; what survives is the arc
+     over the top and under the bottom, and that vertical arc is what makes the
+     shape read as a black hole rather than a ringed planet.
+
+   Every soft edge here is gradient alpha stops. No `shadowBlur`, no
+   `ctx.filter`: this texture is rebuilt on every portal update, so a canvas
+   blur would be real per-moon-jump cost.
+
+   A locked portal gets the horizon and its glow and NO ring and NO halo. The
+   plan's reasoning: the ring is what marks a real one, so its absence says
+   "not formed yet" — a better sentence than "greyed out"; the halo goes with
+   it for the same reason, leaving only the horizon and a dim photon ring. */
 export function makeBlackHoleTexture({ color = '#ffd9a0', locked = false }) {
   const S = 512;
   const canvas = document.createElement('canvas');
@@ -841,7 +864,15 @@ export function makeBlackHoleTexture({ color = '#ffd9a0', locked = false }) {
 
   const HORIZON = 84;
   const RING_RX = 232, RING_RY = 232 * 0.34;
-  const RING_INNER = 0.52; // fraction of RING_RX where the ring starts
+  // Fraction of RING_RX where the ring starts. 0.36 * 232 = 83.5px — the
+  // horizon's own radius, so the ring's first light lands on the rim with no
+  // gap. This number and HORIZON move together or the gap comes back.
+  const RING_INNER = 0.36;
+  /* createRadialGradient's stops run 0..1 across [inner, outer], so a stop's
+     texture radius is inner + t*(outer-inner). The ring is specified in
+     absolute pixels instead, and converted — the whole point of the phase is
+     that these radii are readable against HORIZON. */
+  const ringStop = (px) => (px - RING_RX * RING_INNER) / (RING_RX * (1 - RING_INNER));
 
   // Outer bloom, so the hole sits in something rather than being cut out of
   // the sky. Faint and wide; the sky behind it is near-black in both themes.
@@ -862,11 +893,12 @@ export function makeBlackHoleTexture({ color = '#ffd9a0', locked = false }) {
     ctx.translate(cx, cy);
     ctx.scale(1, RING_RY / RING_RX);
     const grad = ctx.createRadialGradient(0, 0, RING_RX * RING_INNER, 0, 0, RING_RX);
-    grad.addColorStop(0, tint(1.35, 0));
-    grad.addColorStop(0.12, tint(1.5, 0.95));
-    grad.addColorStop(0.3, tint(1.15, 0.7));
-    grad.addColorStop(0.7, tint(0.9, 0.28));
-    grad.addColorStop(1, tint(0.7, 0));
+    grad.addColorStop(0, tint(1.35, 0));                   //  83.5px — the rim
+    grad.addColorStop(ringStop(100), tint(1.5, 0.95));     // 100px — peak
+    grad.addColorStop(ringStop(118), tint(1.28, 0.72));
+    grad.addColorStop(ringStop(145), tint(1.05, 0.45));
+    grad.addColorStop(ringStop(185), tint(0.9, 0.2));
+    grad.addColorStop(1, tint(0.7, 0));                    // 232px — gone
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(0, 0, RING_RX, 0, Math.PI * 2);
@@ -874,7 +906,31 @@ export function makeBlackHoleTexture({ color = '#ffd9a0', locked = false }) {
     ctx.restore();
   };
 
-  if (!locked) drawRingHalf(-1);
+  /* The lensed halo: light from the far side of the disc bent up over the top
+     and down under the bottom. Near-circular (0.9) rather than the disc's 0.34,
+     drawn before the horizon so the horizon crops its inner half away and only
+     the arc outside the rim survives. Its inner radius sits *inside* the
+     horizon on purpose — that part is covered, and starting outside it would
+     put a seam on the rim. */
+  const HALO_RX = 144, HALO_SQUASH = 0.9;
+  const drawHalo = () => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, HALO_SQUASH);
+    const grad = ctx.createRadialGradient(0, 0, HALO_RX * 0.6, 0, 0, HALO_RX);
+    grad.addColorStop(0, tint(1.2, 0.5));
+    grad.addColorStop(0.2, tint(1.2, 0.46));
+    grad.addColorStop(0.45, tint(1.05, 0.28));
+    grad.addColorStop(0.75, tint(0.9, 0.1));
+    grad.addColorStop(1, tint(0.8, 0));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, HALO_RX, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  if (!locked) { drawRingHalf(-1); drawHalo(); }
 
   // The event horizon: genuinely black, not "dark accent". It is the one
   // thing on screen that should give back no light at all.
