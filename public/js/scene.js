@@ -759,10 +759,31 @@ function applyRingLayout() {
    the mesh's proportions cannot drift from the drawing's. All three tiers
    are 512:600 today, which makes refitCardGeometry() a no-op in practice;
    it exists so an edit to that table can't silently start stretching cards.
+
+   MILESTONE GEOMETRY (Plan 5 Phase 5) — "every card shares one geometry"
+   is now "every card shares one of two": the same rectangle, and that
+   rectangle at MILESTONE_MESH_SCALE for a milestone. Both carry
+   userData.shared and neither is ever disposed by disposeCardMesh, so the
+   rule above is unchanged in substance.
+
+   Why a second geometry and not mesh.scale — this is the trap the phase
+   exists to avoid. cardFlip.js tweens mesh.scale during a flip and then hard
+   RESETS it to (1,1,1) on settle, so a milestone sized by scale would look
+   right until the first flip and then shrink back permanently. The flip's
+   tween is a multiplier, so 1 → s → 1 on top of a larger geometry stays
+   correct and cardFlip.js needs no changes at all.
+
+   Why 1.10 and not more: the binding constraint is vertical, in two-row mode
+   (>18 stars in a moon). Rows sit 2.2 apart for a card 1.8 tall, and each
+   card carries ±0.05 of y-jitter, which leaves ~1.16× before two rows'
+   rectangles touch. 1.10 keeps 0.12 units of gap. Widening TWO_ROW_HEIGHTS
+   is the lever for anything larger, and it restages solar's rings too.
 ============================================================ */
 const CARD_MESH_HEIGHT = 1.8;
+const MILESTONE_MESH_SCALE = 1.10;
 let cardAspect = 0;
 let cardGeometry = null;
+let milestoneGeometry = null;
 
 // "Which size are the card textures currently being drawn at" — the thing a
 // tier change has to be compared against, since that is the only tier setting
@@ -776,18 +797,35 @@ function buildCardGeometry() {
   const { width, height } = cardTextureSize();
   cardAspect = width / height;
   cardGeometry = new THREE.PlaneGeometry(CARD_MESH_HEIGHT * cardAspect, CARD_MESH_HEIGHT);
+  milestoneGeometry = new THREE.PlaneGeometry(
+    CARD_MESH_HEIGHT * cardAspect * MILESTONE_MESH_SCALE,
+    CARD_MESH_HEIGHT * MILESTONE_MESH_SCALE
+  );
+  // Belt and braces: nothing in this module disposes a mesh's geometry, but
+  // the flag says out loud that these two belong to the module and not to any
+  // mesh — the same contract the shared placeholder texture/material carry.
+  cardGeometry.userData.shared = true;
+  milestoneGeometry.userData.shared = true;
 }
 buildCardGeometry();
+
+// Which of the two shared rectangles a memory's card is stretched over. A
+// loading placeholder has no memory, and is never a milestone.
+function geometryFor(memory) {
+  return memory?.milestone ? milestoneGeometry : cardGeometry;
+}
 
 function refitCardGeometry() {
   const { width, height } = cardTextureSize();
   if (width / height === cardAspect) return;
-  const previous = cardGeometry;
+  const previous = [cardGeometry, milestoneGeometry];
   buildCardGeometry();
-  // Everything in the ring — stars and placeholders alike — is pointed at the
-  // one geometry, so they all move over together before the old one goes.
-  cardGroup.children.forEach((mesh) => { mesh.geometry = cardGeometry; });
-  previous.dispose();
+  // Everything in the ring — stars and placeholders alike — is pointed at one
+  // of the two geometries, so they all move over together before the old pair
+  // goes. Which one a mesh gets is re-derived rather than remembered, so a
+  // milestone stays big across a tier change.
+  cardGroup.children.forEach((mesh) => { mesh.geometry = geometryFor(mesh.userData.memory); });
+  previous.forEach((geo) => geo.dispose());
 }
 
 /* ============================================================
@@ -906,8 +944,9 @@ export function addMemoryToScene(memory) {
   if (!cached && !stillAwaitingPhoto) cacheTexture(memory.id, tex);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
   // Shared geometry, per-card material: the material carries this card's own
-  // texture, the rectangle it is stretched over is the same for every card.
-  const mesh = new THREE.Mesh(cardGeometry, mat);
+  // texture, the rectangle it is stretched over is one of the module's two
+  // (Plan 5 Phase 5 — a milestone gets the larger one).
+  const mesh = new THREE.Mesh(geometryFor(memory), mat);
 
   mesh.userData.jitter = makeStarJitter();
   mesh.rotation.z = mesh.userData.jitter.tilt;
@@ -955,6 +994,10 @@ export function updateMemoryInScene(memory) {
   memory.mesh.material.map = newTex;
   memory.mesh.material.needsUpdate = true;
   memory.mesh.userData.memory = memory;
+  // Ticking/unticking "milestone" is an edit like any other, and it changes
+  // which rectangle this card belongs on as well as what is drawn on it. The
+  // old geometry is shared and outlives the swap — nothing is disposed here.
+  memory.mesh.geometry = geometryFor(memory);
   // Same contract as addMemoryToScene: an edit that leaves the photo still
   // undecoded (the edit form hands back photoData without a decoded image)
   // has just drawn a card without its photo, and caching that would keep the

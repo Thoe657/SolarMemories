@@ -278,6 +278,27 @@ function drawCircularPhotoOrPlaceholder(ctx, memory, cx, cy, r) {
   }
 }
 
+/* How deep the milestone silhouette's inner radii sit, as a fraction of its
+   outer ones — the ONE in-texture lever on how much of the card a milestone
+   actually covers (Plan 5 Phase 5, decision 12). The shape already spans
+   464×544 of a 512×600 card, so there is no room to merely scale it up; the
+   only way to get more ink out of the same envelope is to fatten it.
+
+   0.66 → 0.72. It does two different jobs, one per shape, which is why it is
+   a single number rather than two:
+   - the star's notch depth. Star area is linear in this ratio, so 0.72 is
+     +9.1% of ink for free. It stops here on purpose: by ~0.78 the notches are
+     shallow enough that five points read as a pentagon with bumps, and the
+     ask was "bigger", not "different". If it needs tuning, this is the knob.
+   - the comet's head radius (COMET_HEAD_SCALE multiplies it). The head grows
+     with it, which is where most of the comet's extra coverage comes from —
+     and it is the one visible side effect worth knowing about, since it
+     shortens the tail *relative* to the head (the tip is anchored to the
+     outer envelope and does not move).
+   Every other comet number is expressed in head radii, so the medallion's
+   clearance budget in milestoneLayout survives this unchanged. */
+const MILESTONE_INNER_RATIO = 0.72;
+
 // Builds a 5-point star outline as a Path2D, with the x/y radii scaled
 // independently so it can fill a non-square canvas cleanly. Points start
 // straight up and proceed clockwise, alternating outer (tip) and inner
@@ -542,7 +563,7 @@ function drawMilestoneCard(ctx, memory, W, H) {
   const shape = milestoneShape();
   const cx = W / 2, cy = 300;
   const outerRx = 232, outerRy = 272;
-  const innerRx = outerRx * 0.66, innerRy = outerRy * 0.66;
+  const innerRx = outerRx * MILESTONE_INNER_RATIO, innerRy = outerRy * MILESTONE_INNER_RATIO;
   const body = buildMilestonePath(shape, cx, cy, outerRx, outerRy, innerRx, innerRy);
   const lay = milestoneLayout(shape, cx, cy, outerRx, outerRy, innerRx, innerRy);
   const paint = milestonePalette(shape);
