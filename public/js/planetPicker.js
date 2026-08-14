@@ -545,6 +545,19 @@ const RING_RADII = [90, 165, 240, 320];
 const PLANET_SIZES = [38, 32, 36, 30, 40, 34, 32, 38]; // px, cycling per planet
 const NEW_PLANET_RING = 0;
 
+/* Plan 5 Phase 8: the "+ new galaxy" button in the spiral (universe) picker.
+   It no longer shares RING_RADII[0]/orbits the bulge — it sits fixed, straight
+   down from the core, clear of it. Phase 7 measured the core (.sun) at ~65px
+   rendered radius at 1280x800/high (20% of the .solar-system container's
+   736px diameter there, fading to ~0 alpha by 88% of its own box). 120px
+   clears that with ~30px of dead space past the icon's own 17px half-width,
+   and stays well inside ring 1 (RING_RADII[1] = 165) so it doesn't collide
+   with a real planet's orbit either. Fixed-pixel, same convention as
+   RING_RADII/ARM_INNER_R/ARM_OUTER_R — the orbit chain doesn't scale with
+   the viewport, so this doesn't either. */
+const NEW_PLANET_SPIRAL_RADIUS = 120;
+const NEW_PLANET_SPIRAL_THETA = 90; // straight down; .orbit-spin rotates clockwise from +X
+
 // Caps how many moon-satellite dots get drawn per planet (Phase 12) — a
 // planet with many moons still only shows a handful, so a very full one
 // reads as "lots" rather than smearing into a solid ring.
@@ -880,7 +893,10 @@ export function renderSolarSystem() {
   if (spiral) {
     // The arms go where the ring guides go — first, so tree order alone puts
     // them behind every planet and no z-index is needed, same as the rings.
-    const baseAngles = [180]; // the "+ new planet" icon's own fixed angle
+    // Plan 5 Phase 8: no longer seeded with the "+ new planet" icon's angle —
+    // it's a UI affordance fixed straight down from the core (see
+    // NEW_PLANET_SPIRAL_THETA), not a planet that needs an arm under it.
+    const baseAngles = [];
     ringGroups.forEach((planetsOnRing, ring) => {
       planetsOnRing.forEach((_, idx) => baseAngles.push((idx / planetsOnRing.length) * 360 + ring * 23));
     });
@@ -912,8 +928,13 @@ export function renderSolarSystem() {
     });
   });
 
-  // "+ new planet" icon always orbits the innermost ring
-  addPlanet({ __isNew: true }, RING_RADII[NEW_PLANET_RING], 26 + NEW_PLANET_RING * 16, 'normal', 180, 34);
+  // "+ new planet" icon: orbits the innermost ring in solar, sits fixed
+  // straight down from the core in the spiral (Plan 5 Phase 8).
+  if (spiral) {
+    addPlanet({ __isNew: true }, NEW_PLANET_SPIRAL_RADIUS, 0, 'normal', NEW_PLANET_SPIRAL_THETA, 34);
+  } else {
+    addPlanet({ __isNew: true }, RING_RADII[NEW_PLANET_RING], 26 + NEW_PLANET_RING * 16, 'normal', 180, 34);
+  }
 }
 
 /* Exposed for verification only (the phase's acceptance is "every planet's
@@ -947,7 +968,10 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
        as a transform instead of animated through. `.planet`'s
        translate(-50%,-50%) has to be restated here: dropping it moves the
        click target off the circle you can see. */
-    const theta = startAngle + ARM_WINDING * radius;
+    // Plan 5 Phase 8: the "+ new planet" icon isn't on an arm, so it skips
+    // the winding term — startAngle (NEW_PLANET_SPIRAL_THETA) is its final
+    // angle as-is. Every other planet still winds with radius, unchanged.
+    const theta = g.__isNew ? startAngle : startAngle + ARM_WINDING * radius;
     spin.style.animation = 'none';
     spin.style.transform = `rotate(${theta}deg)`;
     planet.style.animation = 'none';
