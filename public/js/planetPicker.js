@@ -546,17 +546,10 @@ const RING_RADII = [90, 165, 240, 320];
 const PLANET_SIZES = [38, 32, 36, 30, 40, 34, 32, 38]; // px, cycling per planet
 const NEW_PLANET_RING = 0;
 
-/* Plan 5 Phase 8: the "+ new galaxy" button in the spiral (universe) picker.
-   It no longer shares RING_RADII[0]/orbits the bulge — it sits fixed, straight
-   down from the core, clear of it. Phase 7 measured the core (.sun) at ~65px
-   rendered radius at 1280x800/high (20% of the .solar-system container's
-   736px diameter there, fading to ~0 alpha by 88% of its own box). 120px
-   clears that with ~30px of dead space past the icon's own 17px half-width,
-   and stays well inside ring 1 (RING_RADII[1] = 165) so it doesn't collide
-   with a real planet's orbit either. Fixed-pixel, same convention as
-   RING_RADII/ARM_INNER_R/ARM_OUTER_R — the orbit chain doesn't scale with
-   the viewport, so this doesn't either. */
-const NEW_PLANET_SPIRAL_RADIUS = 120;
+/* The universe add control stays fixed straight down from the core, now inside
+   its lower half so it sits clearly below Maddi's name without joining the
+   rotating galaxy icons. */
+const NEW_PLANET_SPIRAL_RADIUS = 42;
 const NEW_PLANET_SPIRAL_THETA = 90; // straight down; .orbit-spin rotates clockwise from +X
 
 // Caps how many moon-satellite dots get drawn per planet (Phase 12) — a

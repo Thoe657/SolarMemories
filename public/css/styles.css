@@ -949,6 +949,10 @@
     box-shadow: 0 0 0 5px rgba(3, 7, 14, 0.42), 0 4px 18px rgba(0, 0, 0, 0.45);
   }
 
+  :root[data-theme="universe"] .static-new-planet {
+    z-index: 3;
+  }
+
   :root[data-theme="universe"] .planet.new-planet:hover .planet-body {
     border-color: #fff;
     color: #fff;
