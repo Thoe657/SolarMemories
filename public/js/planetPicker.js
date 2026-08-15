@@ -1182,17 +1182,16 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
          colour reaches a pseudo-element. */
       body.classList.add('galaxy-body');
       body.style.setProperty('--planet-accent', color);
+      body.style.setProperty('--planet-accent-glow', `${color}80`);
       // Deterministic, index-free spread: same planet, same spin, every render.
       body.style.setProperty('--galaxy-spin-duration', `${70 + (size % 5) * 11}s`);
       body.style.setProperty('--galaxy-spin-direction', size % 2 === 0 ? 'normal' : 'reverse');
       // A tight bulge, not a ball: the core has to stay small enough that the
       // arms on the ::before are what the eye reads first.
       body.style.background = `radial-gradient(circle at 50% 50%, #fff 0%, ${color} 12%, ${color}00 42%)`;
-      /* One wide, faint layer rather than solar's two. A tight bright layer
-         puts a lit ring immediately outside the element, and since the disc
-         itself is transparent past its core that ring draws a hard dark
-         circle where the element's own box ends. */
-      body.style.boxShadow = `0 0 26px 8px ${color}16`;
+      /* Keep the core glow broad and soft; the rotating ::before owns the
+         brighter shape-aware glow so no hard circular rim appears. */
+      body.style.boxShadow = `0 0 28px 10px ${color}32`;
     } else {
       body.style.background = `radial-gradient(circle at 35% 35%, #fff, ${color} 55%, ${color} 100%)`;
       body.style.boxShadow = `0 0 18px 6px ${color}66, 0 0 36px 14px ${color}33`;
