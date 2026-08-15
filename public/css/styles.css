@@ -943,10 +943,10 @@
   }
 
   :root[data-theme="universe"] .planet.new-planet .planet-body {
-    background: rgba(3, 7, 14, 0.72);
+    background: transparent;
     border-color: rgba(255, 255, 255, 0.62);
     color: rgba(255, 255, 255, 0.88);
-    box-shadow: 0 0 0 5px rgba(3, 7, 14, 0.42), 0 4px 18px rgba(0, 0, 0, 0.45);
+    box-shadow: none;
   }
 
   :root[data-theme="universe"] .static-new-planet {

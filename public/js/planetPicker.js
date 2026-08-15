@@ -1074,7 +1074,7 @@ export function renderSolarSystem() {
   // "+ new planet" icon: orbits the innermost ring in solar, sits fixed
   // straight down from the core in the spiral (Plan 5 Phase 8).
   if (spiral) {
-    addPlanet({ __isNew: true }, NEW_PLANET_SPIRAL_RADIUS, 0, 'normal', NEW_PLANET_SPIRAL_THETA, 34);
+    addPlanet({ __isNew: true }, NEW_PLANET_SPIRAL_RADIUS, 0, 'normal', NEW_PLANET_SPIRAL_THETA, 30);
   } else {
     addPlanet({ __isNew: true }, RING_RADII[NEW_PLANET_RING], 26 + NEW_PLANET_RING * 16, 'normal', 180, 34);
   }
