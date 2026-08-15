@@ -972,9 +972,71 @@
     filter: blur(9px);
   }
 
-  /* Real spirals are not symmetric; one arm always carries more. */
-  .spiral-arm-glow .spiral-arm:nth-child(2) {
-    opacity: 0.78;
+  /* Real spirals are not symmetric; every arm carries a different amount.
+     Plan 6: four arms now, so vary each rather than dimming just the second. */
+  .spiral-arm-glow .spiral-arm:nth-child(2) { opacity: 0.82; }
+  .spiral-arm-glow .spiral-arm:nth-child(3) { opacity: 0.9; }
+  .spiral-arm-glow .spiral-arm:nth-child(4) { opacity: 0.72; }
+
+  /* Layer 1b: cloudy internal texture (Plan 6). Blended screen so the patchy
+     bright noise adds to the glow beneath rather than replacing it; a light
+     blur softens the noise's hard pixel edges. Gated off at the low tier
+     (feTurbulence is the one genuinely expensive thing in this layer). */
+  .spiral-arm-clouds {
+    filter: blur(3px);
+    mix-blend-mode: screen;
+    opacity: 0.7;
+  }
+
+  /* Layer 1c: nebula blobs (Plan 6). Screen-blended and saturated so the
+     colour reads as glowing HII regions / clusters against the haze. */
+  .spiral-nebulae {
+    filter: blur(5px) saturate(1.5);
+    mix-blend-mode: screen;
+  }
+
+  /* Plan 6: pulses of light travelling down the arms into the core. Two soft
+     rings scale from the outer-arm radius in to the centre and fade, screen-
+     blended so they brighten each arm as they cross it — light appears to flow
+     inward into maddi. Compositor-only (transform + opacity), the same
+     discipline as .sun::after; centred with a negative margin so the keyframe's
+     transform is free for scale alone. Gated on .galaxy-motion (tier != low,
+     which also catches prefers-reduced-motion through quality.js's precedence),
+     and removed from the tree entirely otherwise. */
+  .spiral-pulse {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 960px;
+    height: 960px;
+    margin: -480px 0 0 -480px;
+    border-radius: 50%;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    background: radial-gradient(circle,
+      transparent 50%,
+      rgba(190, 214, 255, 0.55) 60%,
+      transparent 70%);
+    will-change: transform, opacity;
+    animation: spiral-pulse-in 6s ease-in infinite;
+  }
+
+  /* The second ring, half a cycle behind, so a pulse is always in flight. */
+  .spiral-pulse.b {
+    animation-delay: -3s;
+  }
+
+  @keyframes spiral-pulse-in {
+    0%   { transform: scale(1); opacity: 0; }
+    18%  { opacity: 0.3; }
+    100% { transform: scale(0.05); opacity: 0; }
+  }
+
+  /* Motion gate: no .galaxy-motion (low tier / reduced motion / solar) → gone,
+     not merely un-animated (a paused ring would freeze as a bright static
+     annulus). Same container class the in-place rotation and detail layers use. */
+  .orbits:not(.galaxy-motion) .spiral-pulse {
+    display: none;
   }
 
   /* Layer 1b: the spine — narrower, brighter, and blurred harder than the
@@ -997,8 +1059,10 @@
     filter: blur(2px);
   }
 
-  /* Decision 15: knots and dust lanes are the two layers this phase adds
-     that were not already being paid for — gate them off at the low tier.
+  /* The detail layers not already paid for by the old flat fill — knots, dust,
+     and (Plan 6) the cloud texture and nebula blobs — are gated off at the low
+     tier. The cloud filter (feTurbulence) is the costly one; the rest are cheap
+     but there's no reason to keep them once the screen is meant to be minimal.
      planetPicker.js toggles .galaxy-detail on #orbitsContainer, re-applied
      on every tier change the same way .galaxy-motion is, so a mid-session
      downgrade actually stops paying for them rather than leaving the layers
@@ -1006,6 +1070,8 @@
      layout/paint), not just hides them, so the gate is real at the low tier
      regardless of how many circles got built. */
   .orbits:not(.galaxy-detail) .spiral-knots,
+  .orbits:not(.galaxy-detail) .spiral-nebulae,
+  .orbits:not(.galaxy-detail) .spiral-arm-clouds,
   .orbits:not(.galaxy-detail) .spiral-arm-dust {
     display: none;
   }

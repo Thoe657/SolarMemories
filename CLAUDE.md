@@ -31,7 +31,7 @@ the code, the API and `data/`.
 | a memory | star | star |
 | a milestone memory | star-cutout card | comet-cutout card |
 | navigation portal | a world you travel to | a black hole with an accretion ring |
-| picker layout | concentric rings, orbiting | a static two-armed spiral |
+| picker layout | concentric rings, orbiting | a static four-armed spiral |
 | content surfaces | warm cream (`#fffaf0`) | cool graphite (`#707688`) |
 | sky family | `nebula-{1,2,3}.webp` | `universe-{1,2,3}.webp` |
 
@@ -328,10 +328,18 @@ Theme notes (Plan 4 — same status as the perf notes above: load-bearing, easy 
   is declared once in `planetPicker.js` and read by both the placement formula
   (`θ = (idx/count)*360 + ring*23 + ARM_WINDING * radius`) and the arm path. Arms baked
   into an image, or drawn from a second constant, would drift off the planets. Related:
-  **the arms are broad because of algebra, not taste** — the winding term cancels between
-  a planet and an arm centre, so "is this planet on an arm" depends on base angles alone,
-  and ring 3's four planets sitting 90° apart force a 90° occupied span against a two-arm
-  180° period. Don't narrow the arms to make them prettier; the planets will fall off.
+  the winding term cancels between a planet and an arm centre, so "is this planet on an
+  arm" depends on base angles alone. **`ARM_COUNT` is 4 as of Plan 6** (was 2 through
+  Plan 5). Counter-intuitively, more arms make the fit *easier*, not harder: at four arms
+  the period is 90°, so ring 3's four planets 90° apart fold to a *single* angle mod 90
+  (they forced a 90° span against the old two-arm 180° period). Against the real planet set
+  the folded base angles are 23/46/69° (rings 1/2/3), so the worst planet needs only
+  halfWidth ≥ 29°; `ARM_HALF_WIDTH_DEG` is 38°, verified `contained: true` via
+  `armLayout()`. The cap is `ARM_HALF_WIDTH_MAX_DEG` 44° — just under period/2 (45°), past
+  which four bands merge into a disc and "on an arm" stops meaning anything. Four broad
+  bands cover ~84% of the circle, which is *why* Plan 6 went to four: it collapses the big
+  black inter-arm voids the two-arm version left into thin dust lanes. Don't widen past the
+  cap or narrow below what `armLayout()` reports contained; the planets will fall off.
 - **`universe` portals are unlit billboards, so the `PointLight` constraint is `solar`
   only.** The three lights still exist in both themes (making the rig conditional would
   put a second theme branch on renderer setup for nothing), but in `universe` they
@@ -382,6 +390,22 @@ Theme notes (Plan 4 — same status as the perf notes above: load-bearing, easy 
   hides both layers, not merely a class that CSS happens to not act on at load. Determinism
   is load-bearing here the same way it is for the moon-dot halo below: knots come from a
   seeded PRNG so `renderSolarSystem()`'s every-create/delete/return rebuild reproduces them.
+  **Plan 6 richened this further** (the flat blue-grey arms were the "previous attempt" a
+  reference brief called out): four arms not two (see the winding-constant note above), an
+  `feTurbulence` **cloud filter** (`.spiral-arm-clouds`) that knocks patchy holes in a copy
+  of each arm so the band is grainy not smooth, large soft-blurred **nebula blobs**
+  (`.spiral-nebulae`, `buildNebulae()` — warm HII pink/magenta/violet + cool blue/teal
+  clusters, same seeded-PRNG discipline as the knots), and the single dust band replaced by
+  several thin rust/near-black threads per arm (`DUST_LANES`). The clouds and nebulae join
+  knots+dust in the `galaxy-detail` low-tier gate — the cloud `feTurbulence` is the one
+  genuinely expensive thing, rasterised once per `renderSolarSystem`, not per frame (the
+  CSS `galaxy-motion` rotation is compositor-only and doesn't re-run it). Colours are local
+  constants (`NEBULA_COLORS` etc.), decorative picker-only, *not* theme.js tokens and not
+  bound by the `#707688` content-surface window. Plan 6 also adds an **inward pulse**: two
+  `.spiral-pulse` divs (soft rings, screen-blended) scaling from the outer-arm radius to the
+  core and fading, so light appears to flow down the arms into maddi. Pure transform+opacity
+  (compositor-only, like `.sun::after`); gated on `.galaxy-motion` — `display:none` when
+  absent, because a *paused* ring would freeze as a bright static annulus, not just stop.
 - **The "new galaxy" icon sits at a fixed θ=90° (straight down) from the core, not on the
   spiral (Plan 5 Phase 8).** `NEW_PLANET_SPIRAL_RADIUS`/`NEW_PLANET_SPIRAL_THETA` skip the
   `ARM_WINDING` term for that one icon, and the arm-fit's `baseAngles` no longer include a

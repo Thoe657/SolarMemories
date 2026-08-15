@@ -600,14 +600,21 @@ const MAX_MOON_SATELLITES = 6;
 // (90 → 320), which reads as an arm. Real spirals are logarithmic; over
 // three rings linear is indistinguishable.
 const ARM_WINDING = 0.35;
-const ARM_COUNT = 2;
+// Four arms, not two (Plan 6). Two arms left big black inter-arm voids; four
+// broad bands cover ~84% of the circle and the voids shrink to thin dust lanes.
+// Counter-intuitively this also makes planet-fitting EASIER: the period is now
+// 90° (was 180°), so the canonical worst case — ring 3's four planets 90° apart
+// — folds to a SINGLE angle mod 90 instead of two 90° apart. Against the real
+// planet set (rings 1/2/3 fold to 23/46/69°, worst planet needs halfWidth ≥29°)
+// the 38° base below clears it with margin.
+const ARM_COUNT = 4;
 // Nominal half-width of the drawn band. Widened only if the rendered planets
-// need it, and never past ARM_HALF_WIDTH_MAX_DEG — past that the two arms
-// have merged into a disc and "on an arm" has stopped meaning anything, so
+// need it, and never past ARM_HALF_WIDTH_MAX_DEG — past period/2 (45° for four
+// arms) the bands merge into a disc and "on an arm" stops meaning anything, so
 // the right answer is to report it, not to keep widening.
-const ARM_HALF_WIDTH_DEG = 52;
+const ARM_HALF_WIDTH_DEG = 38;
 const ARM_FIT_MARGIN_DEG = 6;
-const ARM_HALF_WIDTH_MAX_DEG = 80;
+const ARM_HALF_WIDTH_MAX_DEG = 44;
 // Fixed-pixel, exactly like RING_RADII: nothing in the orbit chain scales
 // with the viewport, so the arm layer must not either.
 const ARM_INNER_R = 26;
@@ -635,17 +642,42 @@ const SPIRAL_ARM_GRADIENT_STOPS = [
 ];
 const SPINE_WIDTH_FRACTION = 0.45; // of the arm's own halfWidth
 const SPINE_FILL = 'rgba(210, 228, 255, 0.5)';
-const DUST_FILL = 'rgba(10, 8, 20, 0.45)';
-const DUST_WIDTH_FRACTION = 0.16; // of halfWidth
-const DUST_OFFSET_FRACTION = 0.6; // toward one edge, of halfWidth
-const KNOT_BLUE = '#cfe0ff';
+const KNOT_BLUE = '#e8f0ff';
 const KNOT_PINK = '#ff9ec4';
-const KNOT_PINK_SHARE = 0.3;
+const KNOT_PINK_SHARE = 0.22;
 // A constant, not a function of planet count — the same galaxy is the same
 // galaxy every time you come back to it (armGeometry's phase/halfWidth do
 // still track the current planet set, same as the arms themselves).
-const STAR_KNOT_COUNT = 40;
+const STAR_KNOT_COUNT = 56;
 const STAR_KNOT_SEED = 20260814;
+
+/* ---- Plan 6: cloudy internal texture + nebula colour ----
+   The arms were a flat blue-grey gradient (the "previous attempt" the brief
+   calls out). This adds (a) an feTurbulence cloud filter that knocks patchy
+   holes in a copy of each arm so the band is grainy, not smooth; and (b) large
+   soft-blurred HII/cluster blobs in warm + cool colours. Same rationale as the
+   KNOT_* constants above: a decorative picker-only layer, so the colours are
+   local constants — not theme.js tokens, and not bound by the #707688
+   content-surface contrast window. */
+const CLOUD_FILTER_ID = 'spiralClouds';
+// id → 'r,g,b', referenced from the nebula layer as url(#<id>).
+const NEBULA_COLORS = {
+  nebPink: '255,95,165', nebMag: '245,70,215', nebViolet: '170,90,255',
+  nebBlue: '110,165,255', nebTeal: '90,225,240',
+};
+const NEBULA_WARM = ['nebPink', 'nebMag', 'nebViolet'];
+const NEBULA_COOL = ['nebBlue', 'nebTeal'];
+const NEBULA_PER_ARM = 14;
+const NEBULA_SEED = 777;
+// Dust threads: [halfWidthFraction, centreOffsetFraction, fill]. Several thin
+// rust / near-black filaments per arm read as interwoven dust, not one band.
+const DUST_LANES = [
+  [0.15, 0.55, 'rgba(66, 28, 20, 0.55)'],
+  [0.09, 0.30, 'rgba(80, 36, 26, 0.42)'],
+  [0.07, 0.02, 'rgba(50, 22, 18, 0.40)'],
+  [0.10, -0.35, 'rgba(20, 12, 24, 0.48)'],
+  [0.06, -0.62, 'rgba(12, 8, 20, 0.45)'],
+];
 
 // Same generator build-backgrounds.js uses for the deterministic sky, so a
 // knot layout reproduces byte-for-byte across renders rather than reshuffling
@@ -771,6 +803,36 @@ function buildStarKnots(geom) {
   return g;
 }
 
+/* Nebula blobs (Plan 6): large soft-blurred colour patches — warm HII regions
+   (pink/magenta/violet) and cool star clusters (blue/teal) — scattered along
+   each arm's centreline. Same seeded-PRNG discipline as buildStarKnots so the
+   layout reproduces byte-for-byte across renders. Gated off at the low tier. */
+function buildNebulae(geom) {
+  const rng = mulberry32(NEBULA_SEED);
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('class', 'spiral-nebulae');
+  for (let a = 0; a < ARM_COUNT; a++) {
+    const centreBase = geom.phase + a * (360 / ARM_COUNT);
+    for (let i = 0; i < NEBULA_PER_ARM; i++) {
+      const r = ARM_INNER_R + 40 + rng() * (ARM_OUTER_R - ARM_INNER_R - 70);
+      const deg = centreBase + ARM_WINDING * r + ((rng() + rng()) - 1) * geom.halfWidth * 0.75;
+      const rad = (deg * Math.PI) / 180;
+      const warm = rng() < 0.6;
+      const pool = warm ? NEBULA_WARM : NEBULA_COOL;
+      const id = pool[Math.floor(rng() * pool.length)];
+      const radius = (warm ? 15 : 22) + rng() * 26;
+      const circle = document.createElementNS(SVG_NS, 'circle');
+      circle.setAttribute('cx', (r * Math.cos(rad)).toFixed(2));
+      circle.setAttribute('cy', (r * Math.sin(rad)).toFixed(2));
+      circle.setAttribute('r', radius.toFixed(2));
+      circle.setAttribute('fill', `url(#${id})`);
+      circle.setAttribute('opacity', (0.82 + rng() * 0.18).toFixed(2));
+      g.appendChild(circle);
+    }
+  }
+  return g;
+}
+
 function buildSpiralArms(geom) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'spiral-arms');
@@ -793,6 +855,58 @@ function buildSpiralArms(geom) {
     grad.appendChild(stop);
   });
   defs.appendChild(grad);
+
+  // Cloud texture filter (Plan 6): fractal noise → its alpha reshaped by a
+  // component transfer → composited "in" a solid arm fill, so the arm becomes
+  // a patchy cloud of itself instead of a smooth gradient. feTurbulence is not
+  // cheap, so the layer that uses this is gated off at the low tier (see
+  // .spiral-arm-clouds in CSS). ponytail: rasterised once per renderSolarSystem
+  // (each create/delete/return), not per frame — the CSS galaxy-motion is a
+  // compositor-only transform and does not re-run the filter. Fine at this
+  // cadence; revisit only if renderSolarSystem is ever called in a hot loop.
+  const filter = document.createElementNS(SVG_NS, 'filter');
+  filter.setAttribute('id', CLOUD_FILTER_ID);
+  filter.setAttribute('x', '-20%');
+  filter.setAttribute('y', '-20%');
+  filter.setAttribute('width', '140%');
+  filter.setAttribute('height', '140%');
+  const turb = document.createElementNS(SVG_NS, 'feTurbulence');
+  turb.setAttribute('type', 'fractalNoise');
+  turb.setAttribute('baseFrequency', '0.018');
+  turb.setAttribute('numOctaves', '5');
+  turb.setAttribute('seed', '8');
+  turb.setAttribute('stitchTiles', 'stitch');
+  turb.setAttribute('result', 't');
+  const ct = document.createElementNS(SVG_NS, 'feComponentTransfer');
+  ct.setAttribute('in', 't');
+  ct.setAttribute('result', 'tt');
+  const fa = document.createElementNS(SVG_NS, 'feFuncA');
+  fa.setAttribute('type', 'linear');
+  fa.setAttribute('slope', '1.6');
+  fa.setAttribute('intercept', '-0.45');
+  ct.appendChild(fa);
+  const comp = document.createElementNS(SVG_NS, 'feComposite');
+  comp.setAttribute('in', 'SourceGraphic');
+  comp.setAttribute('in2', 'tt');
+  comp.setAttribute('operator', 'in');
+  filter.appendChild(turb);
+  filter.appendChild(ct);
+  filter.appendChild(comp);
+  defs.appendChild(filter);
+
+  // Nebula blob gradients: bright core → transparent edge, one per colour.
+  Object.entries(NEBULA_COLORS).forEach(([id, rgb]) => {
+    const ng = document.createElementNS(SVG_NS, 'radialGradient');
+    ng.setAttribute('id', id);
+    [[0, 1], [40, 0.5], [100, 0]].forEach(([off, a]) => {
+      const s = document.createElementNS(SVG_NS, 'stop');
+      s.setAttribute('offset', `${off}%`);
+      s.setAttribute('stop-color', `rgba(${rgb}, ${a})`);
+      ng.appendChild(s);
+    });
+    defs.appendChild(ng);
+  });
+
   svg.appendChild(defs);
 
   // Layer 1a: the gradient-filled band, brighter at mid-radius. Survives
@@ -808,22 +922,39 @@ function buildSpiralArms(geom) {
   }
   svg.appendChild(glow);
 
-  // Layer 3: dust lanes, toward each arm's leading edge, sitting on top of
-  // the glow so they read as filaments across it. Also survives every tier
-  // structurally — visibility is what's gated (see .galaxy-detail in CSS) —
-  // built unconditionally because it's a handful of paths, not 40 circles.
+  // Layer 1b: cloud texture — a copy of each arm filled solid, then the cloud
+  // filter knocks patchy holes in it, so the band reads grainy rather than as
+  // a smooth gradient. Gated off at the low tier (feTurbulence is expensive).
+  const clouds = document.createElementNS(SVG_NS, 'g');
+  clouds.setAttribute('class', 'spiral-arm-clouds');
+  for (let i = 0; i < ARM_COUNT; i++) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'spiral-arm');
+    path.setAttribute('d', armPath(geom.phase + i * (360 / ARM_COUNT), geom.halfWidth * 0.95));
+    path.setAttribute('fill', '#aebbe0');
+    path.setAttribute('filter', `url(#${CLOUD_FILTER_ID})`);
+    clouds.appendChild(path);
+  }
+  svg.appendChild(clouds);
+
+  // Layer 1c: nebulae — big soft colour blobs (HII regions + star clusters),
+  // over the cloud so the colour reads. Gated off at the low tier.
+  svg.appendChild(buildNebulae(geom));
+
+  // Layer 2: dust lanes — several thin rust / near-black threads per arm at
+  // varied offsets, so the dust reads as interwoven filaments across the glow
+  // rather than one band. Visibility is gated at the low tier (.galaxy-detail).
   const dust = document.createElementNS(SVG_NS, 'g');
   dust.setAttribute('class', 'spiral-arm-dust');
   for (let i = 0; i < ARM_COUNT; i++) {
-    const path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('class', 'spiral-dust');
-    path.setAttribute('d', armPath(
-      geom.phase + i * (360 / ARM_COUNT),
-      geom.halfWidth * DUST_WIDTH_FRACTION,
-      geom.halfWidth * DUST_OFFSET_FRACTION
-    ));
-    path.setAttribute('fill', DUST_FILL);
-    dust.appendChild(path);
+    const centreBase = geom.phase + i * (360 / ARM_COUNT);
+    DUST_LANES.forEach(([w, off, fill]) => {
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('class', 'spiral-dust');
+      path.setAttribute('d', armPath(centreBase, geom.halfWidth * w, geom.halfWidth * off));
+      path.setAttribute('fill', fill);
+      dust.appendChild(path);
+    });
   }
   svg.appendChild(dust);
 
@@ -902,6 +1033,18 @@ export function renderSolarSystem() {
     });
     lastArmGeometry = armGeometry(baseAngles);
     orbitsContainer.appendChild(buildSpiralArms(lastArmGeometry));
+    // Plan 6: pulses of light that travel down the arms into maddi. Two soft
+    // rings (staggered half a cycle apart via the `.b` class) contract from the
+    // outer arms to the core, screen-blended so they brighten each arm as they
+    // pass. Motion + gating live entirely in CSS (.spiral-pulse, gated on
+    // .galaxy-motion), so these are just two empty divs — appended before the
+    // planets so the planets stay on top and the pulse disappears into the core.
+    const pulseA = document.createElement('div');
+    pulseA.className = 'spiral-pulse';
+    const pulseB = document.createElement('div');
+    pulseB.className = 'spiral-pulse b';
+    orbitsContainer.appendChild(pulseA);
+    orbitsContainer.appendChild(pulseB);
   } else {
     // always draw all ring guides, regardless of whether anything
     // currently orbits them
