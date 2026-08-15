@@ -574,6 +574,10 @@
     overflow: hidden;
   }
 
+  :root[data-theme="universe"] #planetPicker {
+    background: radial-gradient(circle at 50% 50%, #07101b 0%, #02060d 52%, #000 84%);
+  }
+
   #planetPicker.fading {
     opacity: 0;
     pointer-events: none;
@@ -814,6 +818,14 @@
     inset: 0;
   }
 
+  .orbits.galaxy-motion {
+    animation: orbit-rotate var(--gal-spin) linear infinite;
+  }
+
+  .orbits.galaxy-motion .planet {
+    animation: orbit-counter var(--gal-spin) linear infinite;
+  }
+
   .orbit-ring {
     position: absolute;
     top: 50%;
@@ -911,6 +923,38 @@
     color: rgba(255, 240, 220, 0.45);
   }
 
+  :root[data-theme="universe"] .planet:not(.new-planet) .planet-label::before {
+    content: '';
+    position: absolute;
+    top: -24px;
+    left: 50%;
+    width: 1px;
+    height: 22px;
+    transform: translateX(-50%);
+    background: rgba(205, 220, 255, 0.42);
+    pointer-events: none;
+  }
+
+  :root[data-theme="universe"] .planet:not(.new-planet) .planet-label {
+    top: calc(100% + 50px);
+  }
+
+  :root[data-theme="universe"] .planet.new-planet .planet-body {
+    background: rgba(3, 7, 14, 0.72);
+    border-color: rgba(255, 255, 255, 0.62);
+    color: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 0 0 5px rgba(3, 7, 14, 0.42), 0 4px 18px rgba(0, 0, 0, 0.45);
+  }
+
+  :root[data-theme="universe"] .planet.new-planet:hover .planet-body {
+    border-color: #fff;
+    color: #fff;
+  }
+
+  :root[data-theme="universe"] .planet.new-planet .planet-label {
+    color: rgba(255, 255, 255, 0.72);
+  }
+
   /* Small satellite dots orbiting a planet icon, one per unlocked moon
      (Phase 12) -- mounted inside .planet-body, which is already
      counter-rotated upright by its parent .planet, so this fresh rotation
@@ -950,6 +994,24 @@
      the whole orbit chain is fixed-pixel: nothing in it scales with the
      viewport, so an arm layer that did would be the one thing introducing a
      viewport dependency into placement that placement never had. */
+  :root[data-theme="universe"] .galaxy-haze {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 720px;
+    height: 720px;
+    margin: -360px 0 0 -360px;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+      rgba(255, 226, 190, 0.14) 0%,
+      rgba(170, 190, 255, 0.11) 36%,
+      rgba(100, 145, 235, 0.08) 72%,
+      transparent 100%);
+    filter: blur(48px);
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+
   .spiral-arms {
     position: absolute;
     top: 50%;
@@ -995,10 +1057,10 @@
     mix-blend-mode: screen;
   }
 
-  /* Plan 6: pulses of light travelling down the arms into the core. Two soft
-     rings scale from the outer-arm radius in to the centre and fade, screen-
+  /* Plan 6: subtle pulses of light travelling out from the core. Two soft
+     rings scale from the centre to the outer-arm radius and fade, screen-
      blended so they brighten each arm as they cross it — light appears to flow
-     inward into maddi. Compositor-only (transform + opacity), the same
+     outward from maddi. Compositor-only (transform + opacity), the same
      discipline as .sun::after; centred with a negative margin so the keyframe's
      transform is free for scale alone. Gated on .galaxy-motion (tier != low,
      which also catches prefers-reduced-motion through quality.js's precedence),
@@ -1015,21 +1077,21 @@
     mix-blend-mode: screen;
     background: radial-gradient(circle,
       transparent 50%,
-      rgba(190, 214, 255, 0.55) 60%,
+      rgba(190, 214, 255, 0.22) 60%,
       transparent 70%);
     will-change: transform, opacity;
-    animation: spiral-pulse-in 6s ease-in infinite;
+    animation: spiral-pulse-out 8s ease-out infinite;
   }
 
   /* The second ring, half a cycle behind, so a pulse is always in flight. */
   .spiral-pulse.b {
-    animation-delay: -3s;
+    animation-delay: -4s;
   }
 
-  @keyframes spiral-pulse-in {
-    0%   { transform: scale(1); opacity: 0; }
-    18%  { opacity: 0.3; }
-    100% { transform: scale(0.05); opacity: 0; }
+  @keyframes spiral-pulse-out {
+    0%   { transform: scale(0.05); opacity: 0; }
+    20%  { opacity: 0.16; }
+    100% { transform: scale(1); opacity: 0; }
   }
 
   /* Motion gate: no .galaxy-motion (low tier / reduced motion / solar) → gone,

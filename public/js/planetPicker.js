@@ -457,6 +457,7 @@ function playHyperspace(onMid, kind = 'planet') {
    PLANET PICKER UI — solar system
 ============================================================ */
 const planetPicker = document.getElementById('planetPicker');
+const solarSystem = document.getElementById('solarSystem');
 const orbitsContainer = document.getElementById('orbits');
 const newPlanetForm = document.getElementById('newPlanetForm');
 const newPlanetName = document.getElementById('newPlanetName');
@@ -600,6 +601,8 @@ const MAX_MOON_SATELLITES = 6;
 // (90 → 320), which reads as an arm. Real spirals are logarithmic; over
 // three rings linear is indistinguishable.
 const ARM_WINDING = 0.35;
+const GALAXY_SPIN_SECONDS = 480;
+orbitsContainer.style.setProperty('--gal-spin', `${GALAXY_SPIN_SECONDS}s`);
 // Four arms, not two (Plan 6). Two arms left big black inter-arm voids; four
 // broad bands cover ~84% of the circle and the voids shrink to thin dust lanes.
 // Counter-intuitively this also makes planet-fitting EASIER: the period is now
@@ -1009,6 +1012,7 @@ onTierChange(applySpiralDetail);
 
 export function renderSolarSystem() {
   orbitsContainer.innerHTML = '';
+  solarSystem.querySelector('.static-new-planet')?.remove();
   const spiral = themeFlag('spiralPicker');
 
   // group planets by their assigned ring (default ring index 1, the
@@ -1032,13 +1036,16 @@ export function renderSolarSystem() {
       planetsOnRing.forEach((_, idx) => baseAngles.push((idx / planetsOnRing.length) * 360 + ring * 23));
     });
     lastArmGeometry = armGeometry(baseAngles);
+    const haze = document.createElement('div');
+    haze.className = 'galaxy-haze';
+    orbitsContainer.appendChild(haze);
     orbitsContainer.appendChild(buildSpiralArms(lastArmGeometry));
-    // Plan 6: pulses of light that travel down the arms into maddi. Two soft
-    // rings (staggered half a cycle apart via the `.b` class) contract from the
-    // outer arms to the core, screen-blended so they brighten each arm as they
-    // pass. Motion + gating live entirely in CSS (.spiral-pulse, gated on
+    // Plan 6: pulses of light that travel out through the arms from maddi. Two
+    // soft rings (staggered half a cycle apart via the `.b` class) expand from
+    // the core, screen-blended so they brighten each arm as they pass. Motion
+    // + gating live entirely in CSS (.spiral-pulse, gated on
     // .galaxy-motion), so these are just two empty divs — appended before the
-    // planets so the planets stay on top and the pulse disappears into the core.
+    // planets so the planets stay on top as the pulse fades into the outer arms.
     const pulseA = document.createElement('div');
     pulseA.className = 'spiral-pulse';
     const pulseB = document.createElement('div');
@@ -1077,6 +1084,14 @@ export function renderSolarSystem() {
     addPlanet({ __isNew: true }, NEW_PLANET_SPIRAL_RADIUS, 0, 'normal', NEW_PLANET_SPIRAL_THETA, 34);
   } else {
     addPlanet({ __isNew: true }, RING_RADII[NEW_PLANET_RING], 26 + NEW_PLANET_RING * 16, 'normal', 180, 34);
+  }
+
+  // A rebuild creates fresh counter-animations; restart the moving parent at
+  // the same instant so its rotation cannot leave the new labels tilted.
+  if (spiral && orbitsContainer.classList.contains('galaxy-motion')) {
+    orbitsContainer.classList.remove('galaxy-motion');
+    void orbitsContainer.offsetWidth;
+    orbitsContainer.classList.add('galaxy-motion');
   }
 }
 
@@ -1117,8 +1132,8 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
     const theta = g.__isNew ? startAngle : startAngle + ARM_WINDING * radius;
     spin.style.animation = 'none';
     spin.style.transform = `rotate(${theta}deg)`;
-    planet.style.animation = 'none';
     planet.style.transform = `translate(-50%, -50%) rotate(${-theta}deg)`;
+    planet.style.animationDelay = `${-(theta / 360) * GALAXY_SPIN_SECONDS}s`;
   } else {
     spin.style.animationDuration = `${duration}s`;
     spin.style.animationDirection = direction;
@@ -1192,7 +1207,12 @@ function addPlanet(g, radius, duration, direction, startAngle, size) {
 
   offset.appendChild(planet);
   spin.appendChild(offset);
-  orbitsContainer.appendChild(spin);
+  if (spiral && g.__isNew) {
+    spin.classList.add('static-new-planet');
+    solarSystem.appendChild(spin);
+  } else {
+    orbitsContainer.appendChild(spin);
+  }
 }
 
 // One small dot per unlocked moon (capped at MAX_MOON_SATELLITES), each in

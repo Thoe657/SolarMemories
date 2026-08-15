@@ -401,9 +401,9 @@ Theme notes (Plan 4 — same status as the perf notes above: load-bearing, easy 
   genuinely expensive thing, rasterised once per `renderSolarSystem`, not per frame (the
   CSS `galaxy-motion` rotation is compositor-only and doesn't re-run it). Colours are local
   constants (`NEBULA_COLORS` etc.), decorative picker-only, *not* theme.js tokens and not
-  bound by the `#707688` content-surface window. Plan 6 also adds an **inward pulse**: two
-  `.spiral-pulse` divs (soft rings, screen-blended) scaling from the outer-arm radius to the
-  core and fading, so light appears to flow down the arms into maddi. Pure transform+opacity
+  bound by the `#707688` content-surface window. Plan 6 also adds a subtle **outward pulse**:
+  two `.spiral-pulse` divs (soft rings, screen-blended) scaling from the core to the outer-arm
+  radius and fading, so light appears to flow out through the arms. Pure transform+opacity
   (compositor-only, like `.sun::after`); gated on `.galaxy-motion` — `display:none` when
   absent, because a *paused* ring would freeze as a bright static annulus, not just stop.
 - **The "new galaxy" icon sits at a fixed θ=90° (straight down) from the core, not on the
