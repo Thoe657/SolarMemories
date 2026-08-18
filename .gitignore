@@ -59,3 +59,8 @@ data/
 data.bak-*/
 data.test-*/
 backups/
+# Plan 7 Phase 8 packaging output — the built gift folder (bundles a copy of
+# node/ and node_modules, ~250MB) and the one-off icon-conversion scratch.
+# Neither is source; both are regenerated from what's already in the repo.
+Solar Memories/
+packaging/

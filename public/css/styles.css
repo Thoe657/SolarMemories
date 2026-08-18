@@ -1,4 +1,45 @@
-  @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Quicksand:wght@400;500;600&display=swap');
+  /* Self-hosted (Plan 7 Phase 8) — was a Google Fonts @import, the app's one
+     external request. Both files are variable fonts: one woff2 per family
+     covers every weight below via a separate @font-face per weight pointing
+     at the same file, which is how Google's own CSS API serves them too.
+     Latin subset only (covers ASCII + Latin-1 accents) — matches this app's
+     English content; a rarer glyph outside that range falls back to system
+     type, same as the documented Google-Fonts-outage fallback already did. */
+  @font-face {
+    font-family: 'Caveat';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../assets/fonts/caveat-latin.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Caveat';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../assets/fonts/caveat-latin.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Quicksand';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/quicksand-latin.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Quicksand';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../assets/fonts/quicksand-latin.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Quicksand';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('../assets/fonts/quicksand-latin.woff2') format('woff2');
+  }
 
   /* Theme-independent tokens. The *world* is near-black in both themes —
      the sky doesn't get darker — so the backdrop, the warm lights and the
