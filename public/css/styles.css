@@ -1232,22 +1232,22 @@
     background: conic-gradient(from 0deg,
       transparent 0deg,
       var(--planet-accent, #ffd9a0) 16deg,
-      transparent 58deg,
+      transparent 64deg,
       transparent 180deg,
       var(--planet-accent, #ffd9a0) 196deg,
-      transparent 238deg,
+      transparent 244deg,
       transparent 360deg);
     /* Hollow in the middle: the core is the body's own radial gradient, and
        an arm layer painted over it would just thicken the ball. */
     -webkit-mask-image: radial-gradient(closest-side, transparent 14%, #000 40%, rgba(0,0,0,0.55) 78%, transparent 100%);
     mask-image: radial-gradient(closest-side, transparent 14%, #000 40%, rgba(0,0,0,0.55) 78%, transparent 100%);
-    filter: drop-shadow(0 0 4px var(--planet-accent-glow, rgba(255,217,160,0.5)));
+    filter: drop-shadow(0 0 6px var(--planet-accent-glow, rgba(255,217,160,0.65)));
   }
 
   .orbits.galaxy-detail .planet-body.galaxy-body::before {
     filter:
-      drop-shadow(0 0 4px var(--planet-accent-glow, rgba(255,217,160,0.5)))
-      drop-shadow(0 0 10px var(--planet-accent-glow, rgba(255,217,160,0.5)));
+      drop-shadow(0 0 6px var(--planet-accent-glow, rgba(255,217,160,0.65)))
+      drop-shadow(0 0 14px var(--planet-accent-glow, rgba(255,217,160,0.65)));
   }
 
   /* The motion that replaces orbiting: a galaxy turns in place. The class is
