@@ -32,7 +32,12 @@
      theme you just left would read as "you are still in solar". -->
 <div id="entryScreen">
   <div class="entry-content">
-    <div class="entry-title">maddi's memories</div>
+    <div class="entry-title" id="entryTitle">maddi's memories</div>
+    <!-- First-run owner-name capture (Plan 7 Phase 4): the title itself
+         becomes this input when data/settings.json has no name yet, rather
+         than a separate field bolted on beside it. entryScreen.js toggles
+         which of the two is visible. -->
+    <input type="text" class="entry-title-input hidden" id="ownerNameInput" maxlength="40" placeholder="welcome — what's your name?" autocomplete="off" />
     <div class="entry-actions">
       <button class="btn btn-primary" id="entryEnterBtn">enter</button>
     </div>
@@ -73,7 +78,7 @@
   <div class="start-stars" id="startStars"></div>
   <div class="solar-system" id="solarSystem">
     <div class="sun">
-      <span class="sun-label">maddi</span>
+      <span class="sun-label" id="sunLabel">maddi</span>
     </div>
     <div class="orbits" id="orbits"></div>
   </div>
@@ -335,6 +340,18 @@
      .gitignore ignores vendor/, which is why this lives in lib/ -- named
      vendor/, the file would have been silently untracked and a fresh clone
      would boot to a blank screen with nothing in the diff to explain it. -->
+<!-- Owner-name pre-paint cache (Plan 7 Phase 4). Same shape as the theme
+     script in <head>, but text content instead of an attribute, and placed
+     here rather than there because the elements it touches don't exist yet
+     when <head> runs. The name itself is server-owned (data/settings.json,
+     not localStorage) so this can never be the source of truth -- it is a
+     warm-start guess from the last successful load, applied before the
+     browser paints so a returning owner never sees "maddi" flash before her
+     own name. entryScreen.js still fetches /api/settings and corrects both
+     the DOM and this cache if they ever differ. A blank cache (true first
+     run) leaves the shipped placeholder markup alone, which is correct --
+     there is no name yet to flash to. -->
+<script>try{var n=localStorage.getItem('solarMemories.ownerName');if(n){document.title=n+"'s Memories";var et=document.getElementById('entryTitle');if(et)et.textContent=n.toLowerCase()+"'s memories";var sl=document.getElementById('sunLabel');if(sl)sl.textContent=n.toLowerCase();var pt=document.getElementById('planetTitle');if(pt)pt.textContent=n.toLowerCase()+"'s memories";}}catch(e){}</script>
 <script src="lib/three.min.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>

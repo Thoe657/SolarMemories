@@ -21,6 +21,11 @@ const MEMORIES_DIR = path.join(DATA_DIR, 'memories');
 const MOONS_DIR = path.join(DATA_DIR, 'moons');
 const INDEX_FILE = path.join(DATA_DIR, 'index.json');
 
+// The owner's name (Plan 7 Phase 4) — one small object, not a record dir,
+// since there is only ever one. Lives with the data folder so the gift's
+// personalisation travels with it.
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
 // Max memories ("stars") filed onto one moon before a new one is created.
 const MOON_STAR_CAP = 28;
 
@@ -45,6 +50,7 @@ module.exports = {
   MOONS_DIR,
   MOON_STAR_CAP,
   INDEX_FILE,
+  SETTINGS_FILE,
   BACKUPS_DIR,
   BACKUP_KEEP_COUNT,
   BACKUP_STALE_MS,

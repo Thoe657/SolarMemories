@@ -120,4 +120,17 @@ function validateMemory(body) {
   return { ok: true, doc, errors };
 }
 
-module.exports = { validatePlanet, validateMemory, validateMoon };
+function validateSettings(body) {
+  const errors = [];
+  const { ownerName } = body || {};
+
+  if (typeof ownerName !== 'string' || !ownerName.trim()) {
+    errors.push('invalid settings: ownerName is required and must not be blank');
+    return { ok: false, doc: null, errors };
+  }
+
+  const doc = { ownerName: ownerName.trim().slice(0, 40) };
+  return { ok: true, doc, errors };
+}
+
+module.exports = { validatePlanet, validateMemory, validateMoon, validateSettings };

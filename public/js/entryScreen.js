@@ -45,9 +45,116 @@ import {
   themeConfig,
   themeSource
 } from './theme.js';
+import { getSettings, saveSettings } from './api.js';
+import { showToast } from './util.js';
 
 const entryScreen = document.getElementById('entryScreen');
 const enterBtn = document.getElementById('entryEnterBtn');
+
+/* ============================================================
+   OWNER NAME (Plan 7 Phase 4)
+
+   The app ships with data/settings.json blank on purpose -- typing her
+   name here, on first launch, is the reveal moment. Once it's set, every
+   later launch has to show it immediately, which is what the pre-paint
+   cache in index.html's own inline script is for: this fetch is the
+   authoritative correction of whatever that cache already guessed, never
+   the first thing the owner sees.
+
+   The title itself becomes the input while there's no name yet, rather
+   than a separate field bolted on beside it -- one slot, shown as either
+   text or an input depending on whether there's anything to show.
+============================================================ */
+const OWNER_NAME_KEY = 'solarMemories.ownerName';
+const entryTitleEl = document.getElementById('entryTitle');
+const ownerNameInput = document.getElementById('ownerNameInput');
+
+let capturingOwnerName = false;
+
+function cacheOwnerName(name) {
+  try {
+    window.localStorage.setItem(OWNER_NAME_KEY, name);
+  } catch (e) {
+    // Cache is a pre-paint nicety, not the source of truth — losing it
+    // just means the next load re-fetches before showing the name.
+  }
+}
+
+function applyOwnerName(name) {
+  const lower = name.toLowerCase();
+  document.title = `${name}'s Memories`;
+  entryTitleEl.textContent = `${lower}'s memories`;
+  const sunLabelEl = document.getElementById('sunLabel');
+  if (sunLabelEl) sunLabelEl.textContent = lower;
+  const planetTitleEl = document.getElementById('planetTitle');
+  if (planetTitleEl) planetTitleEl.textContent = `${lower}'s memories`;
+}
+
+function enterCaptureMode() {
+  capturingOwnerName = true;
+  entryTitleEl.classList.add('hidden');
+  ownerNameInput.classList.remove('hidden');
+  enterBtn.disabled = true;
+}
+
+function exitCaptureMode() {
+  capturingOwnerName = false;
+  entryTitleEl.classList.remove('hidden');
+  ownerNameInput.classList.add('hidden');
+  enterBtn.disabled = false;
+}
+
+ownerNameInput.addEventListener('input', () => {
+  enterBtn.disabled = !ownerNameInput.value.trim();
+});
+
+// Enter inside the input submits + enters, same as clicking the button.
+ownerNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (!enterBtn.disabled) enterBtn.click();
+  }
+});
+
+// Resolves true (and applies the name) once it's saved, false if the save
+// failed and capture mode should stay up.
+async function submitOwnerName() {
+  const name = ownerNameInput.value.trim();
+  if (!name) return false;
+  enterBtn.disabled = true;
+  try {
+    const saved = await saveSettings(name);
+    cacheOwnerName(saved);
+    applyOwnerName(saved);
+    exitCaptureMode();
+    return true;
+  } catch (e) {
+    console.warn('Could not save name', e);
+    enterBtn.disabled = false;
+    showToast(`couldn't save that — ${e.message || 'try again'}`, true);
+    return false;
+  }
+}
+
+// Held disabled until the settings fetch resolves, so a click in the first
+// instant of a true first launch can't slip past the still-blank name.
+enterBtn.disabled = true;
+getSettings()
+  .then((name) => {
+    if (name) {
+      cacheOwnerName(name);
+      applyOwnerName(name);
+      enterBtn.disabled = false;
+    } else {
+      enterCaptureMode();
+    }
+  })
+  .catch((e) => {
+    console.warn('Could not load settings', e);
+    // Whatever the pre-paint cache already showed stays; never block entry
+    // on a settings fetch failing.
+    enterBtn.disabled = false;
+  });
 
 /* The screen is shown on load and hidden by `enter()`; `showEntryScreen()`
    brings it back. The two are mirror images and must be able to alternate
@@ -189,7 +296,13 @@ export function showEntryScreen() {
   if (qualityOptions && qualityNote) renderQualitySelector();
 }
 
-enterBtn.addEventListener('click', enter);
+enterBtn.addEventListener('click', async () => {
+  if (capturingOwnerName) {
+    const saved = await submitOwnerName();
+    if (!saved) return;
+  }
+  enter();
+});
 
 /* ============================================================
    THEME SELECTOR (Plan 4 Phase 1)

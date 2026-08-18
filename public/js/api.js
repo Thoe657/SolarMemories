@@ -206,6 +206,30 @@ export async function listBackupsRemote() {
   return body.backups || [];
 }
 
+// The owner's stored name, or '' if it hasn't been set yet (first run).
+export async function getSettings() {
+  const resp = await fetch('/api/settings');
+  if (!resp.ok) {
+    throw new Error(`load failed (${resp.status})`);
+  }
+  const body = await resp.json();
+  return body.ownerName || '';
+}
+
+export async function saveSettings(ownerName) {
+  const resp = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ownerName })
+  });
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}));
+    throw new Error(errBody.error || `save failed (${resp.status})`);
+  }
+  const body = await resp.json();
+  return body.ownerName;
+}
+
 export async function restoreBackupRemote(filename) {
   const resp = await fetch(`/api/backup/${encodeURIComponent(filename)}/restore`, {
     method: 'POST'

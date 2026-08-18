@@ -8,6 +8,7 @@ const { latestBackupTime, createBackup } = require('./src/lib/zipBackup');
 const planetsRouter = require('./src/routes/planets');
 const memoriesRouter = require('./src/routes/memories');
 const backupRouter = require('./src/routes/backup');
+const settingsRouter = require('./src/routes/settings');
 
 ensureDataFiles();
 sweepDeleted(PLANETS_DIR, TRASH_MAX_AGE_MS);
@@ -41,6 +42,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/planets', planetsRouter);
 app.use('/api/memories', memoriesRouter);
 app.use('/api/backup', backupRouter);
+app.use('/api/settings', settingsRouter);
 
 app.listen(PORT, () => {
   console.log(`\nMaddi's Memories is running!`);

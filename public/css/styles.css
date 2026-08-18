@@ -1453,6 +1453,35 @@
     text-shadow: 0 0 24px rgba(255, 217, 160, 0.4);
   }
 
+  .entry-title.hidden { display: none; }
+
+  /* First-run owner-name capture (Plan 7 Phase 4) — same slot and type
+     treatment as .entry-title above, since it visually replaces it while a
+     name hasn't been set yet. */
+  .entry-title-input {
+    font-family: 'Caveat', cursive;
+    font-weight: 700;
+    font-size: clamp(36px, 7vmin, 64px);
+    color: var(--light-glow);
+    text-shadow: 0 0 24px rgba(255, 217, 160, 0.4);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid rgba(255, 217, 160, 0.4);
+    text-align: center;
+    width: min(90vw, 480px);
+  }
+
+  .entry-title-input::placeholder {
+    color: rgba(255, 240, 220, 0.45);
+  }
+
+  .entry-title-input:focus {
+    outline: none;
+    border-bottom-color: var(--light-glow);
+  }
+
+  .entry-title-input.hidden { display: none; }
+
   .entry-actions {
     display: flex;
     gap: 12px;

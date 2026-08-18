@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { DATA_DIR, PLANETS_DIR, MEMORIES_DIR, MOONS_DIR, INDEX_FILE } = require('../config');
+const { DATA_DIR, PLANETS_DIR, MEMORIES_DIR, MOONS_DIR, INDEX_FILE, SETTINGS_FILE } = require('../config');
 
 // --- tiny JSON "database" helpers ---
 
@@ -12,6 +12,9 @@ function ensureDataFiles() {
   });
   if (!fs.existsSync(INDEX_FILE)) {
     fs.writeFileSync(INDEX_FILE, '[]', 'utf8');
+  }
+  if (!fs.existsSync(SETTINGS_FILE)) {
+    fs.writeFileSync(SETTINGS_FILE, '{}', 'utf8');
   }
 }
 
