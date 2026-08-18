@@ -50,6 +50,7 @@ import { showToast } from './util.js';
 
 const entryScreen = document.getElementById('entryScreen');
 const enterBtn = document.getElementById('entryEnterBtn');
+const settingsBtn = document.getElementById('entrySettingsBtn');
 
 /* ============================================================
    OWNER NAME (Plan 7 Phase 4)
@@ -92,11 +93,25 @@ function applyOwnerName(name) {
   if (planetTitleEl) planetTitleEl.textContent = `${lower}'s memories`;
 }
 
-function enterCaptureMode() {
+// clearStaleName: the pre-paint script in index.html may have already
+// painted a *previous* owner's cached name into sunLabel/planetTitle/title
+// before this module got a chance to check the server — true whenever the
+// server now reports no name (a restored older backup, a hand-cleared
+// settings.json) despite localStorage still remembering one.
+function enterCaptureMode(clearStaleName = false) {
   capturingOwnerName = true;
   entryTitleEl.classList.add('hidden');
   ownerNameInput.classList.remove('hidden');
   enterBtn.disabled = true;
+  if (clearStaleName) {
+    ownerName = '';
+    try { window.localStorage.removeItem(OWNER_NAME_KEY); } catch (e) {}
+    document.title = 'Maddi\'s Memories';
+    const sunLabelEl = document.getElementById('sunLabel');
+    if (sunLabelEl) sunLabelEl.textContent = 'maddi';
+    const planetTitleEl = document.getElementById('planetTitle');
+    if (planetTitleEl) planetTitleEl.textContent = 'maddi\'s memories';
+  }
 }
 
 function exitCaptureMode() {
@@ -138,9 +153,12 @@ async function submitOwnerName() {
   }
 }
 
-// Held disabled until the settings fetch resolves, so a click in the first
-// instant of a true first launch can't slip past the still-blank name.
+// Both held disabled until the settings fetch resolves: enterBtn so a click
+// in the first instant of a true first launch can't slip past the
+// still-blank name, and the settings gear so "change name" can't reach
+// enterCaptureMode() and race this same fetch's own capture-mode entry.
 enterBtn.disabled = true;
+settingsBtn.disabled = true;
 getSettings()
   .then((name) => {
     if (name) {
@@ -148,14 +166,32 @@ getSettings()
       applyOwnerName(name);
       enterBtn.disabled = false;
     } else {
-      enterCaptureMode();
+      // The server has no name on record even though a previous session's
+      // name may still be cached (and pre-painted) — clear it rather than
+      // leave it showing next to a title that's now asking for a name.
+      enterCaptureMode(true);
     }
   })
   .catch((e) => {
     console.warn('Could not load settings', e);
-    // Whatever the pre-paint cache already showed stays; never block entry
-    // on a settings fetch failing.
-    enterBtn.disabled = false;
+    // Couldn't reach the server to know either way. Check the cache
+    // directly, not the `ownerName` variable — applyOwnerName() never ran
+    // on this path, so `ownerName` is still '' even when index.html's own
+    // pre-paint script already displayed a cached name. A true first run
+    // (nothing ever cached) falls into capture mode rather than silently
+    // skipping it — better to ask than to open as "maddi" forever. A warm
+    // cache is left alone: whatever was already pre-painted stays, rather
+    // than blocking entry on a settings fetch failing.
+    let hasCache = false;
+    try { hasCache = !!window.localStorage.getItem(OWNER_NAME_KEY); } catch (e2) {}
+    if (!hasCache) {
+      enterCaptureMode();
+    } else {
+      enterBtn.disabled = false;
+    }
+  })
+  .finally(() => {
+    settingsBtn.disabled = false;
   });
 
 /* ============================================================
@@ -166,7 +202,6 @@ getSettings()
    out-rank .entry-content's z-index, not the whole app underneath.
 ============================================================ */
 const entryContentEl = document.getElementById('entryContent');
-const settingsBtn = document.getElementById('entrySettingsBtn');
 const settingsOverlay = document.getElementById('ownerSettingsOverlay');
 const closeSettingsBtn = document.getElementById('closeOwnerSettingsBtn');
 const changeNameBtn = document.getElementById('changeNameBtn');
@@ -195,11 +230,16 @@ settingsOverlay.addEventListener('click', (e) => {
 
 // Reuses the same title-becomes-input flow first-run capture uses, just
 // pre-filled with the current name — submitOwnerName() already applies the
-// result live, so there's nothing further to defer to a reload.
+// result live, so there's nothing further to defer to a reload. Only
+// resets the input's value if capture mode isn't already active: the gear
+// stays reachable during first-run capture, and this must not clobber
+// whatever she's already mid-typing there.
 changeNameBtn.addEventListener('click', () => {
   closeSettingsOverlay();
-  ownerNameInput.value = ownerName;
-  enterCaptureMode();
+  if (!capturingOwnerName) {
+    ownerNameInput.value = ownerName;
+    enterCaptureMode();
+  }
   enterBtn.disabled = !ownerNameInput.value.trim();
   ownerNameInput.focus();
   ownerNameInput.select();

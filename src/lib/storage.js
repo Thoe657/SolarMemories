@@ -18,13 +18,16 @@ function ensureDataFiles() {
   }
 }
 
-function readJSON(file) {
+// defaultValue covers both a missing file and unparseable JSON — every
+// caller so far reads an array (INDEX_FILE) except SETTINGS_FILE, which is
+// a single object, so a corrupt settings.json must not come back as [].
+function readJSON(file, defaultValue = []) {
   try {
     const raw = fs.readFileSync(file, 'utf8');
-    return JSON.parse(raw || '[]');
+    return JSON.parse(raw || JSON.stringify(defaultValue));
   } catch (e) {
     console.error(`Failed to read ${file}:`, e.message);
-    return [];
+    return defaultValue;
   }
 }
 

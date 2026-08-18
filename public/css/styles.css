@@ -1610,6 +1610,11 @@
 
   .entry-settings-btn.hidden { display: none; }
 
+  .entry-settings-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
   .entry-content.hidden { display: none; }
 
   .settings-panel-actions {
