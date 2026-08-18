@@ -811,14 +811,19 @@
      clip it into a circle; this one fades to fully transparent well before
      that clip, so there is nothing left for the clip to cut). Bigger, too —
      Phase 8 shares this radius for its own layout, see CLAUDE.md. */
+  /* Plan 8 Phase 4: the fade-out stretched further (62%→88% collapsed to a
+     longer 70%→100% tail) so the bulge melts into the sky instead of ending
+     at a visibly rounded-off edge — the old 88% stop still had enough alpha
+     left (0.20 * gradient) to read as a soft ring against the dark sky. */
   :root[data-theme="universe"] .sun {
     width: 20%;
     height: 20%;
     background: radial-gradient(circle,
       rgba(255, 246, 220, 0.95) 0%,
       rgba(255, 228, 180, 0.55) 32%,
-      rgba(255, 205, 150, 0.20) 62%,
-      rgba(255, 205, 150, 0) 88%);
+      rgba(255, 205, 150, 0.20) 55%,
+      rgba(255, 205, 150, 0.06) 78%,
+      rgba(255, 205, 150, 0) 100%);
     box-shadow: none;
   }
 
@@ -832,7 +837,8 @@
     background: radial-gradient(circle,
       rgba(255, 228, 180, 0.28) 0%,
       rgba(255, 205, 150, 0.13) 40%,
-      rgba(255, 205, 150, 0) 74%);
+      rgba(255, 205, 150, 0.03) 74%,
+      rgba(255, 205, 150, 0) 92%);
   }
 
   /* Decision 11: a measurement, not a decision — checked against the
@@ -1198,6 +1204,19 @@
     filter: blur(2px);
   }
 
+  /* Layer 4 (Plan 8 Phase 4): core detail — dense star knots + dust haze
+     confined inside ARM_INNER_R, so the galactic core has visible texture
+     up close instead of reading as a flat gradient. Dust screen-blended and
+     blurred soft like the nebulae; stars blurred light like the arm knots. */
+  .spiral-core-dust {
+    filter: blur(6px);
+    mix-blend-mode: screen;
+  }
+
+  .spiral-core-stars {
+    filter: blur(1.5px);
+  }
+
   /* The detail layers not already paid for by the old flat fill — knots, dust,
      and (Plan 6) the cloud texture and nebula blobs — are gated off at the low
      tier. The cloud filter (feTurbulence) is the costly one; the rest are cheap
@@ -1211,7 +1230,8 @@
   .orbits:not(.galaxy-detail) .spiral-knots,
   .orbits:not(.galaxy-detail) .spiral-nebulae,
   .orbits:not(.galaxy-detail) .spiral-arm-clouds,
-  .orbits:not(.galaxy-detail) .spiral-arm-dust {
+  .orbits:not(.galaxy-detail) .spiral-arm-dust,
+  .orbits:not(.galaxy-detail) .spiral-core-detail {
     display: none;
   }
 

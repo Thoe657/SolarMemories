@@ -838,6 +838,59 @@ function buildNebulae(geom) {
   return g;
 }
 
+/* Core detail (Plan 8 Phase 4): dense star knots + a little dust haze,
+   confined inside ARM_INNER_R (the same radius the arms start at) so the
+   galactic core reads as more than a flat gradient up close. Angle- and
+   arm-independent — the core surrounds maddi on every side, not just along
+   the arms — so unlike buildStarKnots/buildNebulae this doesn't take geom.
+   Same seeded-PRNG discipline as those two: renderSolarSystem() rebuilds
+   this whole SVG on every planet create/delete/return, so Math.random()
+   here would reshuffle the core each time. Gated behind .galaxy-detail. */
+const CORE_DETAIL_SEED = 424242;
+const CORE_STAR_COUNT = 70;
+const CORE_DUST_COUNT = 10;
+
+function buildCoreDetail() {
+  const rng = mulberry32(CORE_DETAIL_SEED);
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('class', 'spiral-core-detail');
+
+  const dust = document.createElementNS(SVG_NS, 'g');
+  dust.setAttribute('class', 'spiral-core-dust');
+  for (let i = 0; i < CORE_DUST_COUNT; i++) {
+    // r^2-biased so blobs cluster toward the centre rather than the rim.
+    const r = rng() * rng() * ARM_INNER_R;
+    const deg = rng() * 360;
+    const rad = (deg * Math.PI) / 180;
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', (r * Math.cos(rad)).toFixed(2));
+    circle.setAttribute('cy', (r * Math.sin(rad)).toFixed(2));
+    circle.setAttribute('r', (8 + rng() * 10).toFixed(2));
+    circle.setAttribute('fill', 'rgba(230, 220, 255, 0.5)');
+    dust.appendChild(circle);
+  }
+  g.appendChild(dust);
+
+  const stars = document.createElementNS(SVG_NS, 'g');
+  stars.setAttribute('class', 'spiral-core-stars');
+  for (let i = 0; i < CORE_STAR_COUNT; i++) {
+    const r = rng() * rng() * ARM_INNER_R;
+    const deg = rng() * 360;
+    const rad = (deg * Math.PI) / 180;
+    const pink = rng() < KNOT_PINK_SHARE;
+    const radius = pink ? 1.0 + rng() * 0.8 : 1.4 + rng() * 1.6;
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', (r * Math.cos(rad)).toFixed(2));
+    circle.setAttribute('cy', (r * Math.sin(rad)).toFixed(2));
+    circle.setAttribute('r', radius.toFixed(2));
+    circle.setAttribute('fill', pink ? KNOT_PINK : KNOT_BLUE);
+    stars.appendChild(circle);
+  }
+  g.appendChild(stars);
+
+  return g;
+}
+
 function buildSpiralArms(geom) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'spiral-arms');
@@ -1004,6 +1057,10 @@ function buildSpiralArms(geom) {
 
   // Layer 2: star knots, on top of everything so they stay points.
   svg.appendChild(buildStarKnots(geom));
+
+  // Layer 4: core detail — dense star knots + dust haze confined inside
+  // ARM_INNER_R, on top of everything so the core reads clearly up close.
+  svg.appendChild(buildCoreDetail());
 
   return svg;
 }
