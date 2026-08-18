@@ -31,7 +31,12 @@
      cheap to re-show and theme-invariant — a menu that repainted itself in the
      theme you just left would read as "you are still in solar". -->
 <div id="entryScreen">
-  <div class="entry-content">
+  <!-- Settings gear (Plan 7 Phase 5) -->
+  <button class="entry-settings-btn" id="entrySettingsBtn" aria-label="settings">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+
+  <div class="entry-content" id="entryContent">
     <div class="entry-title" id="entryTitle">maddi's memories</div>
     <!-- First-run owner-name capture (Plan 7 Phase 4): the title itself
          becomes this input when data/settings.json has no name yet, rather
@@ -71,6 +76,34 @@
         <div class="entry-quality-note" id="entryQualityNote"></div>
       </div>
     </div>
+  </div>
+
+  <!-- Settings panel (Plan 7 Phase 5): change name, open the data folder,
+       exit the app. Nested inside #entryScreen so its z-index only has to
+       beat .entry-content's, not the app underneath. -->
+  <div class="overlay" id="ownerSettingsOverlay">
+    <div class="panel">
+      <h2>settings</h2>
+      <div class="settings-panel-actions">
+        <button class="btn btn-secondary" id="changeNameBtn">change name</button>
+        <button class="btn btn-secondary" id="revealDataBtn">open data folder</button>
+        <button class="read-delete" id="exitAppBtn">exit app</button>
+        <div class="confirm-row" id="exitAppConfirmRow" style="display:none;">
+          <button class="btn btn-secondary" id="cancelExitAppBtn">stay</button>
+          <button class="btn btn-primary" id="confirmExitAppBtn" style="background: var(--accent-deep);">yes, exit</button>
+        </div>
+      </div>
+      <div class="panel-actions">
+        <button class="btn btn-secondary" id="closeOwnerSettingsBtn">close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- The honest quit state for a headless, locally-launched app: there is
+       no window manager close button to fall back on, so this says plainly
+       that it's safe to close the tab. -->
+  <div class="quit-screen hidden" id="quitScreen">
+    <div class="quit-message">you can close this window now.</div>
   </div>
 </div>
 

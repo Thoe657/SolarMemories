@@ -1576,6 +1576,68 @@
     line-height: 1.35;
   }
 
+  /* Settings gear (Plan 7 Phase 5) — top-right corner, same treatment as
+     .picker-exit's top-left corner button on the picker screen: quiet chrome
+     that shouldn't compete with the enter button for attention. */
+  .entry-settings-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: var(--ui-bg);
+    border: 1px solid var(--ui-border);
+    color: var(--light-glow);
+    border-radius: 999px;
+    cursor: pointer;
+    opacity: 0.72;
+    transition: background 0.2s, opacity 0.2s, transform 0.15s;
+  }
+
+  .entry-settings-btn:hover {
+    opacity: 1;
+    background: rgba(255, 217, 160, 0.18);
+    transform: translateY(-1px);
+  }
+
+  .entry-settings-btn:active {
+    transform: translateY(0px) scale(0.96);
+  }
+
+  .entry-settings-btn.hidden { display: none; }
+
+  .entry-content.hidden { display: none; }
+
+  .settings-panel-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  /* The honest quit state (Plan 7 Phase 5): shown in place of .entry-content
+     once /api/settings/quit has told the server to exit. Reuses #entryScreen's
+     own fixed sky rather than opening a third surface. */
+  .quit-screen {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+  }
+
+  .quit-screen.hidden { display: none; }
+
+  .quit-message {
+    font-family: 'Caveat', cursive;
+    font-weight: 700;
+    font-size: clamp(28px, 5vmin, 44px);
+    color: var(--light-glow);
+    text-shadow: 0 0 24px rgba(255, 217, 160, 0.4);
+  }
+
   /* ---------- Trash (edit-planet panel) ---------- */
   .trash-list {
     max-height: 160px;

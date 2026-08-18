@@ -230,6 +230,20 @@ export async function saveSettings(ownerName) {
   return body.ownerName;
 }
 
+export async function revealDataFolder() {
+  const resp = await fetch('/api/settings/reveal-data');
+  if (!resp.ok) {
+    throw new Error(`reveal failed (${resp.status})`);
+  }
+}
+
+export async function quitApp() {
+  await fetch('/api/settings/quit', { method: 'POST' }).catch(() => {
+    // The server may close the connection while exiting before the
+    // response finishes — that's the expected shape of a successful quit.
+  });
+}
+
 export async function restoreBackupRemote(filename) {
   const resp = await fetch(`/api/backup/${encodeURIComponent(filename)}/restore`, {
     method: 'POST'

@@ -45,7 +45,7 @@ import {
   themeConfig,
   themeSource
 } from './theme.js';
-import { getSettings, saveSettings } from './api.js';
+import { getSettings, saveSettings, revealDataFolder, quitApp } from './api.js';
 import { showToast } from './util.js';
 
 const entryScreen = document.getElementById('entryScreen');
@@ -70,6 +70,7 @@ const entryTitleEl = document.getElementById('entryTitle');
 const ownerNameInput = document.getElementById('ownerNameInput');
 
 let capturingOwnerName = false;
+let ownerName = '';
 
 function cacheOwnerName(name) {
   try {
@@ -81,6 +82,7 @@ function cacheOwnerName(name) {
 }
 
 function applyOwnerName(name) {
+  ownerName = name;
   const lower = name.toLowerCase();
   document.title = `${name}'s Memories`;
   entryTitleEl.textContent = `${lower}'s memories`;
@@ -155,6 +157,87 @@ getSettings()
     // on a settings fetch failing.
     enterBtn.disabled = false;
   });
+
+/* ============================================================
+   SETTINGS PANEL (Plan 7 Phase 5)
+
+   A small gear opening three actions: change name, open the data folder,
+   exit the app. Nested inside #entryScreen in the markup so it only has to
+   out-rank .entry-content's z-index, not the whole app underneath.
+============================================================ */
+const entryContentEl = document.getElementById('entryContent');
+const settingsBtn = document.getElementById('entrySettingsBtn');
+const settingsOverlay = document.getElementById('ownerSettingsOverlay');
+const closeSettingsBtn = document.getElementById('closeOwnerSettingsBtn');
+const changeNameBtn = document.getElementById('changeNameBtn');
+const revealDataBtn = document.getElementById('revealDataBtn');
+const exitAppBtn = document.getElementById('exitAppBtn');
+const exitAppConfirmRow = document.getElementById('exitAppConfirmRow');
+const cancelExitAppBtn = document.getElementById('cancelExitAppBtn');
+const confirmExitAppBtn = document.getElementById('confirmExitAppBtn');
+const quitScreen = document.getElementById('quitScreen');
+
+function openSettingsOverlay() {
+  settingsOverlay.classList.add('visible');
+}
+
+function closeSettingsOverlay() {
+  settingsOverlay.classList.remove('visible');
+  exitAppConfirmRow.style.display = 'none';
+  exitAppBtn.style.display = '';
+}
+
+settingsBtn.addEventListener('click', openSettingsOverlay);
+closeSettingsBtn.addEventListener('click', closeSettingsOverlay);
+settingsOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsOverlay) closeSettingsOverlay();
+});
+
+// Reuses the same title-becomes-input flow first-run capture uses, just
+// pre-filled with the current name — submitOwnerName() already applies the
+// result live, so there's nothing further to defer to a reload.
+changeNameBtn.addEventListener('click', () => {
+  closeSettingsOverlay();
+  ownerNameInput.value = ownerName;
+  enterCaptureMode();
+  enterBtn.disabled = !ownerNameInput.value.trim();
+  ownerNameInput.focus();
+  ownerNameInput.select();
+});
+
+revealDataBtn.addEventListener('click', async () => {
+  revealDataBtn.disabled = true;
+  try {
+    await revealDataFolder();
+  } catch (e) {
+    console.warn('Could not open the data folder', e);
+    showToast(`couldn't open that — ${e.message || 'try again'}`, true);
+  } finally {
+    revealDataBtn.disabled = false;
+  }
+});
+
+exitAppBtn.addEventListener('click', () => {
+  exitAppBtn.style.display = 'none';
+  exitAppConfirmRow.style.display = 'flex';
+});
+
+cancelExitAppBtn.addEventListener('click', () => {
+  exitAppConfirmRow.style.display = 'none';
+  exitAppBtn.style.display = '';
+});
+
+confirmExitAppBtn.addEventListener('click', async () => {
+  confirmExitAppBtn.disabled = true;
+  cancelExitAppBtn.disabled = true;
+  await quitApp();
+  // The server is exiting (or already has); there is nothing left to wait
+  // on or roll back, so this always proceeds to the calm state.
+  settingsOverlay.classList.remove('visible');
+  entryContentEl.classList.add('hidden');
+  settingsBtn.classList.add('hidden');
+  quitScreen.classList.remove('hidden');
+});
 
 /* The screen is shown on load and hidden by `enter()`; `showEntryScreen()`
    brings it back. The two are mirror images and must be able to alternate
