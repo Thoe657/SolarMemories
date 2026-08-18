@@ -190,6 +190,16 @@ is a thin entrypoint (config, middleware, mount routes, listen, startup backup c
   (soft delete), `DELETE /:id/forever`.
   Planets routes also have `GET /:id/moons` (list, sorted by index). Planet delete
   cascades: archives the planet and archives its (non-deleted) memories and moons too.
+- `routes/settings.js` (Plan 7 Phase 4/5) — a single settings record at
+  `data/settings.json`, not one-per-id like the other three. `GET /` returns
+  `{ ownerName: '' }` if unset; `PUT /` validates via `validateSettings` (non-blank,
+  trimmed, capped at 40 chars) and writes through the same `withWriteLock`/atomic-write
+  path as every other record. `GET /reveal-data` runs the OS file-browser reveal on the
+  server's own resolved `DATA_DIR` — never a client-supplied path — and is deliberately
+  fire-and-forget: it doesn't wait on or report the exec result, since `explorer.exe` on
+  Windows routinely exits nonzero even when the window opened fine. `POST /quit` responds
+  `{ ok: true }` first, then `process.exit(0)` after a 200ms delay so the response has
+  time to flush — the honest quit path for a headless, windowless local server.
 
 ### Frontend (`public/`)
 `public/js/main.js` is the module entrypoint (imported via `<script type="module">`),
@@ -220,7 +230,16 @@ theme-invariant** sky image, not the old per-theme drifting-blob canvas; reachab
 both at load and back from a planet via the picker's `#exitToMenuBtn`, so it is no
 longer one-time. Phase 2 makes a changed theme/quality choice `location.reload()`
 *under* the still-visible menu rather than repaint live — see the theme notes
-below), `cardFlip.js` (click a card → it flips in 3D, then a DOM
+below. Plan 7 Phase 4/5 added owner-name capture and a settings panel, both driven
+through `api.js`'s `getSettings`/`saveSettings`: when `data/settings.json` has no name,
+the entry title itself becomes an inline text input ("welcome — what's your name?"),
+Enter disabled until non-blank, submit saves and proceeds straight in. A gear icon opens
+a small panel with three actions — change name (the same title-becomes-input flow,
+pre-filled), open data folder (`GET /api/settings/reveal-data`), and exit app (a confirm,
+then `POST /api/settings/quit`, then a calm "you can close this window now" state, since
+a headless local app has no window manager to fall back to). The gear is inert until the
+initial settings fetch resolves, so "change name" can't race that fetch's own capture-mode
+entry), `cardFlip.js` (click a card → it flips in 3D, then a DOM
 panel fades in with the full content, replacing the old disconnected read-overlay
 modal), `motionPreference.js` (the sole remaining export, `prefersReducedMotion()`,
 reads the OS-level `prefers-reduced-motion` media query — `scene.js` uses it to slow
@@ -425,12 +444,32 @@ Theme notes (Plan 4 — same status as the perf notes above: load-bearing, easy 
   but it must be re-applied inside an `onTierChange` callback, or a mid-session downgrade
   leaves the animation running.
 
+Owner name notes (Plan 7 Phase 4 — same "load-bearing, easy to undo" status as the
+theme/perf notes above):
+
+- **The "maddi flash" is prevented the same way the theme flash is** (see `data-theme`
+  above): a small pre-paint inline `<script>` in `<head>`, mirroring the theme script,
+  applies a `localStorage`-cached last-known name before first paint. `entryScreen.js`'s
+  settings fetch remains the *authoritative* correction — the cache is a guess to avoid a
+  flash, not the source of truth — and clears itself if the server reports no name on
+  record (e.g. after restoring an older backup), so a previous owner's stale cached name
+  can't linger through a restore.
+- **The five hardcoded "maddi" spots are name-driven, with no default fallback.**
+  `index.html`'s `<title>`, `.entry-title`, `.sun-label` and `#planetTitle`'s placeholder
+  all read the stored `ownerName` — blank means the capture prompt, never a "maddi"
+  placeholder. The favicon *file* keeps its `maddi_sun.ico` name regardless; the filename
+  is never shown on screen.
+
 Data schema:
 - planet: `{ id, name, accentColor, ring (1-3), deletedAt, createdAt }`
 - memory: `{ id, planetId, type ('photo'|'letter'|'audio'), title, date, text, photoData, audioData, milestone, relatedIds, moonId, deletedAt, createdAt }`
 - moon: `{ id, planetId, index, name, starCount, deletedAt, createdAt }` — a planet's
   memories are grouped onto moons of up to `MOON_STAR_CAP` (28) each, server-assigned
   at memory-creation time.
+- settings (Plan 7 Phase 4): `{ ownerName }` — one record at `data/settings.json`, not
+  one-per-id like the other three. Ships as `{}` (blank), so the gift's first launch is
+  the moment she types her name. `validateSettings` requires non-blank, trims, and caps
+  at 40 characters.
 
 Moons and the ring: `state.memories` holds **every** star on the open planet (so
 related-memory links and the related-memory picker reach across moons), but `scene.js`
@@ -563,9 +602,36 @@ Also note `git worktree remove` fails with "Permission denied" while the testbed
 is still running — stop it first, and if the worktree registration is left behind,
 `rm -rf` the directory and `git worktree prune`.
 
+## Packaging
+
+`Solar Memories/` (repo-root, gitignored, ~160MB, a build output regenerated from the
+repo rather than source) is the folder actually shipped as the gift: `Solar Memories.app`
+sitting **beside** a visible `data/` — not buried inside the bundle — plus `start.command`
+as a guaranteed foreground fallback. The launcher runs the server headless (no Terminal
+window) and auto-opens the default browser to it; re-launching while already running
+detects the live server and just opens the browser again rather than crashing on the
+taken port. `packaging/` (also gitignored) keeps the full `.icns` iconset plus a rebuild
+script (`rebuild-icns.command`), kept separate from the delivery folder because no macOS
+was available here to build or verify the icon — a cosmetic detail to check on the real
+machine, not a functional risk to the app.
+
+Two things are deliberately **not done** as of Plan 7 Phase 8, both left as manual,
+unscripted steps rather than automated: the delivery folder needs a fresh rebuild after
+Plan 7's later phases landed on top of it, and the real `data/` still has to be copied
+into it by hand before this actually ships to Maddi — real personal data isn't something
+to move unattended.
+
+`Solar Memories/README.md` (inside the gitignored delivery folder — **not** this
+repo-root `README.md`) is written for Maddi herself: `chmod +x`, the Gatekeeper
+right-click→Open flow for an unsigned app, making a Desktop alias instead of moving the
+app out of its folder, and quitting via the app's own settings-panel exit rather than
+just closing the browser tab (which would leave the local server running). A
+`<!-- your message to her here -->` block near its top is left blank for the gift-giver
+to fill in by hand.
+
 ## Development plan
 
-Five plans are complete and merged to `main`, condensed in
+Seven plans are complete and merged to `main`, condensed in
 [docs/PLAN_ARCHIVE.md](docs/archive/PLAN_ARCHIVE.md): Plan 1, phases 0–14 (file
 structure split, validation, per-record storage, archive-not-delete, backups, and a run
 of feature/perf phases), and Plan 2, "Galaxy scaling — stars & planets," phases 1–12
@@ -610,11 +676,39 @@ files that differ from the *older* `docs/harness/data-baseline.txt` predate Plan
 entirely — they are the same user-made edits from 2026-08-13 this file already
 documents below, not new drift.
 
+Plan 6, "Universe spiral: richer galaxy art," is **complete and merged to `main`**, in
+the same archive. Unlike every other plan it has no `docs/PLAN.md` phase structure and
+no per-phase commits — five commits done directly on `main` against a reference brief
+that called the existing two-armed, flat-filled spiral a "previous attempt": four arms
+instead of two (easier to fit, not harder — a 90° period folds ring 3's four planets to
+one angle, where the old 180° period forced a 90° occupied span), an `feTurbulence` cloud
+filter for grain inside the band, seeded nebula blobs, multiple thin dust threads per arm
+replacing the single band, an inward pulse of light flowing down the arms into maddi, plus
+three follow-up refinement commits (icon hover highlight, moving the "new galaxy" control
+inside maddi's core). Zero `data/` writes.
+
+Plan 7, "Finalisation (v1)," phases 1–9, is **complete and merged to `main`**, in the
+same archive. The plan that ships the gift: Phase 1 purged the last test data (data-only,
+gitignored, so it left no commit); Phase 2 dropped the `medium` quality tier to a plain
+High/Low/Auto with a schema-version bump so a stored `medium` verdict is discarded, not
+coerced; Phase 3 moved the back button to the top-left and gave the universe black hole a
+bigger, fierier accretion ring; Phase 4 added owner-name capture (`data/settings.json`,
+shipped blank, all five hardcoded "maddi" spots now name-driven, a pre-paint script
+preventing a name flash); Phase 5 added the gear-icon settings panel (change name, open
+data folder, exit app); Phase 6 was a bug hunt (`/code-review` plus a manual pass) that
+fixed seven real issues, mostly races and stale-cache edges around the new settings/entry
+code; Phase 7 was a conservative cleanup pass removing the dead `medium`-tier branches and
+comments Phase 2 left behind; Phase 8 built the native M1 packaging (`Solar Memories/`,
+gitignored, see "Packaging" above) and self-hosted the app's two Google Fonts, closing out
+the last external host. **Unlike Plans 4 and 5, this is explicitly not a zero-write
+plan** — Phase 1 and Phase 4 both touch `data/` on purpose, each backed up to
+`data.bak-<timestamp>/` first and confirmed with the user before anything destructive.
+
 [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md) lists candidate future work (PWA/service worker,
-native macOS packaging, PIN/passcode lock, PDF keepsake export, manual card reordering,
-self-hosting the two web fonts, a moving comet object, hyperspace lensing, plus a couple
-of gaps found along the way) that is **not yet scoped** — brainstorm/discuss before
-turning any item there into a real phase; don't treat it as pre-approved.
+PIN/passcode lock, PDF keepsake export, manual card reordering, a moving comet object,
+hyperspace lensing, plus a couple of gaps found along the way) that is **not yet
+scoped** — brainstorm/discuss before turning any item there into a real phase; don't
+treat it as pre-approved.
 
 [docs/PLAN.md](docs/PLAN.md) is reused as the spec for whichever plan is currently
 active. **It is empty — nothing is scoped right now.** A plan that has landed is
