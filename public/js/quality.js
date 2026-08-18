@@ -16,7 +16,7 @@
      1. prefers-reduced-motion — forces low, over everything. A stated
         accessibility preference, not a capability signal, so no
         measurement and no explicit choice outranks it.
-     2. ?quality=high|medium|low — a deliberate override for testing the
+     2. ?quality=high|low — a deliberate override for testing the
         low path on a machine fast enough never to earn it.
      3. an explicit choice made in the entry screen's selector, persisted.
      4. a verdict this machine reached in an earlier session, persisted.
@@ -30,7 +30,7 @@ import { prefersReducedMotion } from './motionPreference.js';
 
 // Ordered best → worst. Stepping "down" means moving one place right,
 // which is the only direction the runtime measurement is allowed to move.
-export const TIERS = ['high', 'medium', 'low'];
+export const TIERS = ['high', 'low'];
 
 /* The tier table from docs/PLAN.md, as data. Two of these columns are not
    read by anything yet, on purpose:
@@ -49,15 +49,6 @@ export const TIER_SETTINGS = {
     fairyLights: 120,
     cardTexture: { width: 512, height: 600 },
     hyperspaceStars: { moon: 420, planet: 220 }
-  },
-  medium: {
-    pixelRatioCap: 1.5,
-    antialias: true,
-    targetFps: 60,
-    distantStars: 600,
-    fairyLights: 60,
-    cardTexture: { width: 512, height: 600 },
-    hyperspaceStars: { moon: 260, planet: 160 }
   },
   low: {
     pixelRatioCap: 1,
@@ -84,24 +75,27 @@ export const TIER_SETTINGS = {
    'auto') and the last measured verdict, alongside the schema version.
 
    The version guards the *table*, not just the record's shape: a stored
-   verdict of "medium" means "medium as it was tuned when this was
-   written". Retune the table and that sentence stops being true, so a
-   mismatch throws the whole record away rather than trying to rescue
-   half of it — a stale verdict is worse than no verdict, because it
-   skips the learning it claims to have already done. Bump this whenever
-   TIER_SETTINGS changes meaningfully.
+   verdict of "low" means "low as it was tuned when this was written".
+   Retune the table and that sentence stops being true, so a mismatch
+   throws the whole record away rather than trying to rescue half of it —
+   a stale verdict is worse than no verdict, because it skips the learning
+   it claims to have already done. Bump this whenever TIER_SETTINGS
+   changes meaningfully.
 
    v2 (2026-08-12): every tier targets 60fps, and scene.js's throttle no
    longer loses frames to vsync aliasing. Every v1 verdict was measured
    against a loop that couldn't hit its own target, so all of them are
    discarded rather than trusted.
 
+   v3 (Plan 7 Phase 2): 'medium' dropped. A stored "medium" verdict or
+   choice is discarded, not coerced to an adjacent tier — see readStored().
+
    Every access is wrapped: localStorage is absent in some embeddings,
    throws SecurityError outright when site data is disabled, and throws
    QuotaExceededError on write in private mode. None of that is allowed
    to stop the app from starting — it just means the tier doesn't persist.
 ============================================================ */
-export const QUALITY_SCHEMA_VERSION = 2;
+export const QUALITY_SCHEMA_VERSION = 3;
 const STORAGE_KEY = 'solarMemories.quality';
 
 function readStored() {

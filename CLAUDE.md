@@ -49,7 +49,7 @@ Useful URLs (Plan 3 Phase 1, both no-ops without the query param):
   a plain object (`{ frameMs, fps, avgFrameMs, avgFps, calls, triangles, textures,
   geometries, tier, renderedStars, heapMB, paused }`). **This is the cheap way to verify
   render work — one line of console JSON instead of a screenshot.**
-- `?quality=high|medium|low` — forces a quality tier at load, bypassing the benchmark and
+- `?quality=high|low` — forces a quality tier at load, bypassing the benchmark and
   any persisted verdict. Needed to exercise the low path on a fast machine, and the only
   way to get `antialias: false` (it is fixed at renderer construction).
 - `?theme=solar|universe` (Plan 4 Phase 1) — forces a theme at load. **Unlike `?quality=`
