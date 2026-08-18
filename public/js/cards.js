@@ -876,9 +876,10 @@ export function makeBlackHoleTexture({ color = '#ffd9a0', locked = false }) {
 
   // Outer bloom, so the hole sits in something rather than being cut out of
   // the sky. Faint and wide; the sky behind it is near-black in both themes.
+  // Plan 7 Phase 3b: bumped brighter for a more intense, fiery glow.
   const bloom = ctx.createRadialGradient(cx, cy, HORIZON * 0.8, cx, cy, S / 2);
-  bloom.addColorStop(0, tint(1, locked ? 0.10 : 0.22));
-  bloom.addColorStop(0.45, tint(0.8, locked ? 0.04 : 0.09));
+  bloom.addColorStop(0, tint(1, locked ? 0.10 : 0.28));
+  bloom.addColorStop(0.45, tint(0.8, locked ? 0.04 : 0.12));
   bloom.addColorStop(1, tint(0.6, 0));
   ctx.fillStyle = bloom;
   ctx.fillRect(0, 0, S, S);
@@ -893,12 +894,14 @@ export function makeBlackHoleTexture({ color = '#ffd9a0', locked = false }) {
     ctx.translate(cx, cy);
     ctx.scale(1, RING_RY / RING_RX);
     const grad = ctx.createRadialGradient(0, 0, RING_RX * RING_INNER, 0, 0, RING_RX);
+    // Plan 7 Phase 3b: hotter core + fuller alpha for a more intense, fiery
+    // ring — gradient stops only, still no shadowBlur/ctx.filter.
     grad.addColorStop(0, tint(1.35, 0));                   //  83.5px — the rim
-    grad.addColorStop(ringStop(100), tint(1.5, 0.95));     // 100px — peak
-    grad.addColorStop(ringStop(118), tint(1.28, 0.72));
-    grad.addColorStop(ringStop(145), tint(1.05, 0.45));
-    grad.addColorStop(ringStop(185), tint(0.9, 0.2));
-    grad.addColorStop(1, tint(0.7, 0));                    // 232px — gone
+    grad.addColorStop(ringStop(100), tint(1.8, 1));        // 100px — peak
+    grad.addColorStop(ringStop(118), tint(1.5, 0.85));
+    grad.addColorStop(ringStop(145), tint(1.2, 0.55));
+    grad.addColorStop(ringStop(185), tint(1.0, 0.25));
+    grad.addColorStop(1, tint(0.8, 0));                    // 232px — gone
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(0, 0, RING_RX, 0, Math.PI * 2);

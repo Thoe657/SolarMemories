@@ -1350,6 +1350,11 @@ const PORTAL_ANGLES = { prev: -Math.PI * (100 / 180), next: Math.PI * (100 / 180
    accepts, and a 6% squash on an accretion disc reads as the disc being
    tilted, which is what one looks like anyway. */
 const BLACK_HOLE_PORTALS = themeFlag('blackHolePortals');
+// Plan 7 Phase 3b: "beefier black hole" — the disc's quad, as a multiple of
+// PORTAL_BODY_RADIUS. Was 2.6; bumped for a slightly bigger billboard. The
+// label offset below derives its half-width from this same constant, not a
+// second literal, so the caption gap can't drift out of sync with the disc.
+const PORTAL_DISC_SCALE = 2.9;
 
 function makePortalObject(kind) {
   const group = new THREE.Group();
@@ -1373,7 +1378,7 @@ function makePortalObject(kind) {
       // by its own quad. Sized off the same radius the sphere used, with room
       // around it for the accretion ring and bloom, which live inside the
       // texture rather than in extra geometry.
-      new THREE.PlaneGeometry(PORTAL_BODY_RADIUS * 2.6, PORTAL_BODY_RADIUS * 2.6),
+      new THREE.PlaneGeometry(PORTAL_BODY_RADIUS * PORTAL_DISC_SCALE, PORTAL_BODY_RADIUS * PORTAL_DISC_SCALE),
       new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
     )
     : new THREE.Mesh(
@@ -1410,7 +1415,7 @@ function makePortalObject(kind) {
   // themes: the sphere is PORTAL_BODY_RADIUS across its radius, the disc's quad
   // is 1.3x that, because the ring and bloom are painted inside the texture.
   // Measuring off the geometry rather than the constant keeps the same gap.
-  const bodyHalfWidth = BLACK_HOLE_PORTALS ? PORTAL_BODY_RADIUS * 1.3 : PORTAL_BODY_RADIUS;
+  const bodyHalfWidth = BLACK_HOLE_PORTALS ? PORTAL_BODY_RADIUS * (PORTAL_DISC_SCALE / 2) : PORTAL_BODY_RADIUS;
   label.position.x = (kind === 'next' ? 1 : -1) * (bodyHalfWidth + labelWidth / 2 + 0.3);
   label.userData.portal = kind;
   group.add(label);
