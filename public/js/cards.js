@@ -252,12 +252,36 @@ function drawPhotoOrPlaceholder(ctx, memory, area) {
 
    Audio keeps its ♪ for the same reason it kept it on a plain card: a title
    cannot tell you something is a recording. */
+
+// drawCover is Math.min-scaled (contain, not cover) — cards.js:641 — so a
+// non-square photo leaves a gap top/bottom or side/side inside the circle.
+// Matte it with the photo's own average colour instead of the card glow
+// showing through. Sampled once per image (1x1 offscreen draw) and cached on
+// the image object, since the LRU evicts and redraws the same photo's
+// texture repeatedly over a session.
+const photoAvgColorCache = new WeakMap();
+function averagePhotoColor(img) {
+  let color = photoAvgColorCache.get(img);
+  if (color) return color;
+  const sample = document.createElement('canvas');
+  sample.width = 1;
+  sample.height = 1;
+  const sctx = sample.getContext('2d');
+  sctx.drawImage(img, 0, 0, 1, 1);
+  const [r, g, b] = sctx.getImageData(0, 0, 1, 1).data;
+  color = `rgb(${r}, ${g}, ${b})`;
+  photoAvgColorCache.set(img, color);
+  return color;
+}
+
 function drawCircularPhotoOrPlaceholder(ctx, memory, cx, cy, r) {
   if (memory.type === 'photo' && memory.photoImg) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.clip();
+    ctx.fillStyle = averagePhotoColor(memory.photoImg);
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
     drawCover(ctx, memory.photoImg, cx - r, cy - r, r * 2, r * 2);
     ctx.restore();
   } else {
