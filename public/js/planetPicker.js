@@ -21,17 +21,16 @@ import { showEntryScreen } from './entryScreen.js';
    PLANET PICKER — twinkling background stars
 
    THE COLOUR/DEPTH PASS (Plan 4 Phase 4) IS TIER-GATED, and it is the one
-   piece of runtime work the whole of Plan 4 adds. Three levels, using
+   piece of runtime work the whole of Plan 4 adds. Two levels, using
    quality.js's existing tier vocabulary rather than a second gating scheme
    of this file's own:
 
-     high   → 'full'    themed colour per star, a glow on the two nearest
-                        layers, and one extra far layer for depth
-     medium → 'reduced' themed colour per star, nothing else
-     low    → 'off'     exactly what this did before the phase: no inline
-                        colour, no glow, no extra layer, so the low tier's
-                        DOM and paint cost are unchanged by construction
-                        rather than by measurement
+     high → 'full'   themed colour per star, a glow on the two nearest
+                     layers, and one extra far layer for depth
+     low  → 'off'    exactly what this did before the phase: no inline
+                     colour, no glow, no extra layer, so the low tier's
+                     DOM and paint cost are unchanged by construction
+                     rather than by measurement
 
    prefers-reduced-motion forces the low tier (quality.js's precedence
    chain), so it lands on 'off' without this file testing for it.
@@ -43,7 +42,7 @@ import { showEntryScreen } from './entryScreen.js';
    is exactly the kind of duplication that drifts.
 
    Back → front. Solar's dominant tone is styles.css's own
-   rgba(255,245,225,.8), so 'off' and 'reduced' differ in richness rather
+   rgba(255,245,225,.8), so 'off' and 'full' differ in richness rather
    than in hue; universe swaps the whole range cool. */
 const STARFIELD_PALETTES = {
   solar: [
@@ -70,11 +69,9 @@ function starfieldPalette() {
   return STARFIELD_PALETTES[currentTheme()] || STARFIELD_PALETTES[DEFAULT_THEME];
 }
 
-// 'full' | 'reduced' | 'off'
+// 'full' | 'off'
 function starfieldLevel(tier = currentTier()) {
-  if (tier === 'low') return 'off';
-  if (tier === 'medium') return 'reduced';
-  return 'full';
+  return tier === 'low' ? 'off' : 'full';
 }
 
 (function setupPickerStars() {
@@ -249,8 +246,8 @@ const hyCtx = hyperspaceCanvas.getContext('2d');
 /* Backing store scale. The low tier draws this canvas at 70% in each axis and
    CSS stretches it back — half the pixels for streaks that are motion-blurred
    smears by design, on the machine least able to afford them. Moon travel is
-   the app's showiest moment and it should not be its jerkiest. High and medium
-   draw 1:1, so nothing changes there. */
+   the app's showiest moment and it should not be its jerkiest. High draws
+   1:1, so nothing changes there. */
 function hyperspaceScale() {
   return currentTier() === 'low' ? 0.7 : 1;
 }
@@ -348,9 +345,9 @@ function playHyperspace(onMid, kind = 'planet') {
     const palette = hyperspacePalette(kindKey);
     const DURATION = preset.duration;
     // Star count comes from the tier, not the preset: 420/220 at high,
-    // 260/160 at medium, 140/100 at low (quality.js's TIER_SETTINGS). The
-    // preset's own starCount is the high-tier figure and stays as the
-    // reference for what the effect was designed to look like.
+    // 140/100 at low (quality.js's TIER_SETTINGS). The preset's own
+    // starCount is the high-tier figure and stays as the reference for
+    // what the effect was designed to look like.
     const STAR_COUNT = tierSettings().hyperspaceStars[kindKey];
     const cx = hyperspaceCanvas.width / 2;
     const cy = hyperspaceCanvas.height / 2;

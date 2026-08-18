@@ -276,7 +276,7 @@ Perf/asset notes (mostly Plan 3 — these are load-bearing and easy to undo by a
   ownership over — it clears the `cached` flag and disposes only if no visible mesh
   still holds the texture. `updateMemoryInScene()` still evicts on edit so a cache hit
   always reflects saved content.
-- **Card texture size comes from the tier** (512x600 / 512x600 / 384x450). Everything in
+- **Card texture size comes from the tier** (512x600 / 384x450). Everything in
   `cards.js` is drawn in a fixed 512x600 reference space with one `ctx.scale`, so the high
   tier is an identity transform and stays pixel-identical. Keep new drawing code in that
   reference space.

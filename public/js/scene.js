@@ -284,7 +284,7 @@ const fairyPalette = FAIRY_COLOR_THEMES[currentTheme()] || FAIRY_COLOR_THEMES[DE
 // The three populations, as *shares* of the total so a tier scales them
 // together instead of one group vanishing first. At the high tier's 120 they
 // come out at exactly the original 50 / 40 / 30 — that is the point, the high
-// tier has to be untouched. (medium's 60 → 25/20/15; low's 24 → 10/8/6.)
+// tier has to be untouched. (low's 24 → 10/8/6.)
 const FAIRY_POPULATIONS = [
   { share: 50 / 120, radiusMin: 3, radiusMax: 7 },
   { share: 40 / 120, radiusMin: 6, radiusMax: 11 },
@@ -1992,10 +1992,6 @@ const frameCallbacks = new Set();
 export function addFrameCallback(fn) {
   frameCallbacks.add(fn);
   return () => frameCallbacks.delete(fn);
-}
-
-export function removeFrameCallback(fn) {
-  frameCallbacks.delete(fn);
 }
 
 // Kept for perfHud.js, which owns one slot and replaces rather than adds.

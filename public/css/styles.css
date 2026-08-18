@@ -1323,8 +1323,8 @@
      element: with `width: auto` it takes its *intrinsic* size (the width and
      height attributes, i.e. the backing store) and `inset` cannot stretch it,
      so the element is only as big as the pixels it was allocated. That
-     coincides with the viewport at the high and medium tiers and does not at
-     low, where planetPicker.js's hyperspaceScale() allocates 70% in each axis
+     coincides with the viewport at the high tier and does not at low, where
+     planetPicker.js's hyperspaceScale() allocates 70% in each axis
      — which is exactly how the low tier ended up playing the transition in a
      70% box in the top-left corner. (The entry screen's canvas downsampled the
      same way and carried these two lines for the same reason; Plan 5 Phase 1
