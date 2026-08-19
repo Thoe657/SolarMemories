@@ -706,7 +706,10 @@
     position: absolute;
     width: 90px;
     height: 2px;
-    background: linear-gradient(90deg, rgba(255,255,255,0.95), rgba(255,255,255,0));
+    /* Bright head on the leading (right) edge — the bar translates along its
+       rotated +X axis (down-right), so the bright end must be the far one or
+       the streak reads backwards, tail-first. */
+    background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.95));
     border-radius: 2px;
     transform-origin: left center;
     opacity: 0;
@@ -1109,35 +1112,6 @@
   .spiral-nebulae {
     filter: blur(5px) saturate(1.5);
     mix-blend-mode: screen;
-  }
-
-  /* The outer group cancels .orbits' rotation so its pointer mask stays in
-     screen space; the inner group restores that rotation to the fog art.
-     `mask-origin/mask-clip: view-box` looked right (masking an SVG <g> by
-     its viewBox) but Chrome resolves it to a quarter-sized, off-centre box
-     on a nested group — left at the (correct) default box instead, which
-     the fogAnchor rect in planetPicker.js pins to the full viewBox. */
-  :root[data-theme="universe"] .orbits.galaxy-detail .spiral-fog-cutout {
-    -webkit-mask-image: radial-gradient(circle 120px at var(--fog-x, -200px) var(--fog-y, -200px), transparent 0 42px, #000 120px);
-    mask-image: radial-gradient(circle 120px at var(--fog-x, -200px) var(--fog-y, -200px), transparent 0 42px, #000 120px);
-  }
-
-  :root[data-theme="universe"] .orbits.galaxy-detail.galaxy-motion .spiral-fog-cutout,
-  :root[data-theme="universe"] .orbits.galaxy-detail.galaxy-motion .spiral-fog-motion {
-    /* Same Chrome view-box bug as the mask above; fill-box + the anchor
-       rect gives a reliable, viewBox-centred rotation pivot instead. */
-    transform-box: fill-box;
-    transform-origin: 50% 50%;
-    animation: fog-counter var(--gal-spin) linear infinite;
-  }
-
-  :root[data-theme="universe"] .orbits.galaxy-detail.galaxy-motion .spiral-fog-motion {
-    animation-name: orbit-rotate;
-  }
-
-  @keyframes fog-counter {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(-360deg); }
   }
 
   /* Plan 6: subtle pulses of light travelling out from the core. Two soft

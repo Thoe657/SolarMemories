@@ -187,9 +187,6 @@ function starfieldLevel(tier = currentTier()) {
      paused whenever the picker is the screen you're looking at. */
   let parallaxX = 0;
   let parallaxY = 0;
-  let fogClientX = 0;
-  let fogClientY = 0;
-  const universeFog = currentTheme() === 'universe';
   let parallaxQueued = false;
 
   function writeParallax() {
@@ -197,26 +194,17 @@ function starfieldLevel(tier = currentTier()) {
     layerEls.forEach(({ el, parallax }) => {
       el.style.transform = `translate(${-parallaxX * parallax}px, ${-parallaxY * parallax}px)`;
     });
-    if (!universeFog || !orbitsContainer.classList.contains('galaxy-detail')) return;
-    const fog = orbitsContainer.querySelector('.spiral-fog-cutout');
-    if (!fog) return;
-    fog.style.setProperty('--fog-x', `${fogClientX - window.innerWidth / 2 + ARM_BOX / 2}px`);
-    fog.style.setProperty('--fog-y', `${fogClientY - window.innerHeight / 2 + ARM_BOX / 2}px`);
   }
 
   window.addEventListener('pointermove', (e) => {
     parallaxX = e.clientX / window.innerWidth - 0.5;
     parallaxY = e.clientY / window.innerHeight - 0.5;
-    if (universeFog && orbitsContainer.classList.contains('galaxy-detail')) {
-      fogClientX = e.clientX;
-      fogClientY = e.clientY;
-    }
     if (parallaxQueued) return;
     parallaxQueued = true;
     requestAnimationFrame(writeParallax);
   });
 
-  // Occasional shooting stars, every 8-15s (randomized so there's no
+  // Occasional shooting stars, every 6-12s (randomized so there's no
   // noticeable fixed rhythm), each removing itself once its animation ends.
   function spawnShootingStar() {
     const el = document.createElement('div');
@@ -236,7 +224,7 @@ function starfieldLevel(tier = currentTier()) {
   }
 
   function scheduleShootingStar() {
-    const delay = 8000 + Math.random() * 7000;
+    const delay = 6000 + Math.random() * 6000;
     setTimeout(() => {
       spawnShootingStar();
       scheduleShootingStar();
@@ -993,38 +981,11 @@ function buildSpiralArms(geom) {
     path.setAttribute('filter', `url(#${CLOUD_FILTER_ID})`);
     clouds.appendChild(path);
   }
-  // Both groups below get a CSS `transform: rotate(...)` keyed to the SVG's
-  // own viewBox centre (see styles.css) — `transform-box: view-box` measures
-  // that correctly per spec, but Chrome mis-resolves it (and `mask-*:
-  // view-box`) to a quarter-sized, off-centre reference box on a nested <g>.
-  // `fill-box` sidesteps the bug, but it derives its box from the group's
-  // *rendered content*, which the arm/nebula shapes don't fill symmetrically
-  // — so each group gets an invisible full-canvas anchor rect to pin that
-  // box to the real viewBox regardless of what's drawn inside.
-  function fogAnchor() {
-    const anchor = document.createElementNS(SVG_NS, 'rect');
-    anchor.setAttribute('x', String(-ARM_BOX / 2));
-    anchor.setAttribute('y', String(-ARM_BOX / 2));
-    anchor.setAttribute('width', String(ARM_BOX));
-    anchor.setAttribute('height', String(ARM_BOX));
-    anchor.setAttribute('fill', 'none');
-    anchor.setAttribute('pointer-events', 'none');
-    return anchor;
-  }
-
-  const fogCutout = document.createElementNS(SVG_NS, 'g');
-  fogCutout.setAttribute('class', 'spiral-fog-cutout');
-  fogCutout.appendChild(fogAnchor());
-  const fogMotion = document.createElementNS(SVG_NS, 'g');
-  fogMotion.setAttribute('class', 'spiral-fog-motion');
-  fogMotion.appendChild(fogAnchor());
-  fogMotion.appendChild(clouds);
+  svg.appendChild(clouds);
 
   // Layer 1c: nebulae — big soft colour blobs (HII regions + star clusters),
   // over the cloud so the colour reads. Gated off at the low tier.
-  fogMotion.appendChild(buildNebulae(geom));
-  fogCutout.appendChild(fogMotion);
-  svg.appendChild(fogCutout);
+  svg.appendChild(buildNebulae(geom));
 
   // Layer 2: dust lanes — several thin rust / near-black threads per arm at
   // varied offsets, so the dust reads as interwoven filaments across the glow
