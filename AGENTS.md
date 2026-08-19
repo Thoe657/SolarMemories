@@ -615,11 +615,11 @@ script (`rebuild-icns.command`), kept separate from the delivery folder because 
 was available here to build or verify the icon — a cosmetic detail to check on the real
 machine, not a functional risk to the app.
 
-Two things are deliberately **not done** as of Plan 7 Phase 8, both left as manual,
-unscripted steps rather than automated: the delivery folder needs a fresh rebuild after
-Plan 7's later phases landed on top of it, and the real `data/` still has to be copied
-into it by hand before this actually ships to Maddi — real personal data isn't something
-to move unattended.
+The two things left undone as of Plan 7 Phase 8 — a fresh rebuild after later phases
+landed, and copying the real `data/` in by hand — were both done manually in Plan 8
+Phase 5: `public/` (the only piece that had changed) resynced and reconfirmed
+byte-identical, real `data/` copied to `Solar Memories/data/`, and the source `data/`
+this repo tracks confirmed untouched throughout.
 
 `Solar Memories/README.md` (inside the gitignored delivery folder — **not** this
 repo-root `README.md`) is written for Maddi herself: `chmod +x`, the Gatekeeper
@@ -631,7 +631,7 @@ to fill in by hand.
 
 ## Development plan
 
-Seven plans are complete and merged to `main`, condensed in
+Eight plans are complete and merged to `main`, condensed in
 [docs/PLAN_ARCHIVE.md](docs/archive/PLAN_ARCHIVE.md): Plan 1, phases 0–14 (file
 structure split, validation, per-record storage, archive-not-delete, backups, and a run
 of feature/perf phases), and Plan 2, "Galaxy scaling — stars & planets," phases 1–12
@@ -703,6 +703,21 @@ gitignored, see "Packaging" above) and self-hosted the app's two Google Fonts, c
 the last external host. **Unlike Plans 4 and 5, this is explicitly not a zero-write
 plan** — Phase 1 and Phase 4 both touch `data/` on purpose, each backed up to
 `data.bak-<timestamp>/` first and confirmed with the user before anything destructive.
+
+Plan 8, "Universe polish & ship (amendments)," phases 1–5, is **complete and merged to
+`main`**, in the same archive. A short user-driven punch list against shipped v1, plus
+the finalisation step Plan 7 Phase 8 left undone. Phase 1 mattes the milestone photo
+circle's gap with a colour sampled from the photo itself instead of showing the card
+glow through it. Phase 2 (universe fog parting around the cursor) shipped, was found
+broken on live verification — a Chrome bug resolving `view-box` as a CSS geometry-box
+keyword to a quarter-sized, off-centre reference box on a nested SVG `<g>` — was fixed
+and re-verified working, then **scrapped by hand** after living with it: the reveal read
+as detached/floating. Phase 3 brightened the universe galaxy icons; Phase 4 blended the
+core into the sky with seeded star/dust detail, re-confirming sun-label contrast
+(6.34:1) after both phases landed behind the same region. Phase 5 rebuilt the delivery
+bundle and loaded real data into `Solar Memories/data/`, beside the `.app` as the
+launcher scripts expect. **Zero writes to the source `data/`** across all five phases,
+including Phase 5 — its write lands entirely in the gitignored delivery folder.
 
 [docs/PLAN_NEXT.md](docs/PLAN_NEXT.md) lists candidate future work (PWA/service worker,
 PIN/passcode lock, PDF keepsake export, manual card reordering, a moving comet object,
