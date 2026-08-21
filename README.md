@@ -1,7 +1,7 @@
 # SolarMemories
 
 A local personal app for storing memories (photos, letters, audio) about favourite
-people — built as a birthday gift ("Maddi's Memories"). Each person is a planet;
+people (or anything!) — built as an anniversary gift. Each person is a planet;
 memories orbit as star cards in a Three.js 3D scene, grouped into moons of up to 28
 stars each. Two visual themes ship: `solar` (planets/moons/stars, warm cream cards) and
 `universe` (galaxies/nebulae/stars, cool graphite cards, black-hole portals) — a skin
@@ -60,3 +60,5 @@ package:
 `CLAUDE.md` is the primary reference for anyone working on this codebase: architecture,
 data schema, the two-theme system, performance notes, data-safety practices, and the
 full project history through v1.
+
+`AGENTS.md` points to claude.md as a single-source of truth.
