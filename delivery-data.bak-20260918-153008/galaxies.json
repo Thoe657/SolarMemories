@@ -1,0 +1,51 @@
+[
+  {
+    "id": "gal-1781529486467",
+    "name": "Theo",
+    "accentColor": "#f2e0a6",
+    "ring": 1,
+    "createdAt": "2026-06-15T13:18:06.472Z"
+  },
+  {
+    "id": "gal-1781529486467-2",
+    "name": "Addy",
+    "accentColor": "#e2a6f2",
+    "ring": 1,
+    "createdAt": "2026-06-15T13:18:06.472Z"
+  },
+  {
+    "id": "gal-1781531759889",
+    "name": "Dad",
+    "accentColor": "#a6e8f2",
+    "ring": 2,
+    "createdAt": "2026-06-15T13:55:59.895Z"
+  },
+  {
+    "id": "gal-1781531765548",
+    "name": "Mum",
+    "accentColor": "#b3f2c8",
+    "ring": 2,
+    "createdAt": "2026-06-15T13:56:05.549Z"
+  },
+  {
+    "id": "gal-1781531776315",
+    "name": "Laila",
+    "accentColor": "#e2a6f2",
+    "ring": 3,
+    "createdAt": "2026-06-15T13:56:16.316Z"
+  },
+  {
+    "id": "gal-1781531782983",
+    "name": "Jock",
+    "accentColor": "#f2a6b0",
+    "ring": 3,
+    "createdAt": "2026-06-15T13:56:22.984Z"
+  },
+  {
+    "id": "gal-1781531795568",
+    "name": "Gypsy",
+    "accentColor": "#a6c8f2",
+    "ring": 3,
+    "createdAt": "2026-06-15T13:56:35.569Z"
+  }
+]
