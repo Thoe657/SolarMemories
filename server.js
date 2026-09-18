@@ -16,7 +16,9 @@ sweepDeleted(MEMORIES_DIR, TRASH_MAX_AGE_MS);
 sweepDeleted(MOONS_DIR, TRASH_MAX_AGE_MS);
 
 const app = express();
-app.use(express.json({ limit: '12mb' }));
+// Must exceed MAX_DOC_SIZE (12MB decoded) after base64 inflation (~16MB) with
+// headroom, so a max-size memory reaches validation instead of 413-ing here.
+app.use(express.json({ limit: '18mb' }));
 /* Long-lived caching for the two folders whose contents never change in place:
    assets/ (the baked skies) and lib/ (the vendored three.js). Together that is
    ~1.2MB that a warm load was re-validating on every single start -- three

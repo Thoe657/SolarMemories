@@ -34,7 +34,11 @@ const BACKUPS_DIR = path.join(__dirname, '..', 'backups');
 const BACKUP_KEEP_COUNT = 10;
 const BACKUP_STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-const MAX_DOC_SIZE = 8 * 1024 * 1024; // 8MB safety margin
+// Max decoded size of one memory (text + photo + audio combined). The
+// express.json body limit in server.js must stay above this * ~1.34 (base64
+// inflation), or a memory near this cap is rejected as a 413 before the
+// friendlier "too large" message can run.
+const MAX_DOC_SIZE = 12 * 1024 * 1024; // 12MB safety margin
 const ALLOWED_TYPES = ['photo', 'letter', 'audio'];
 
 // How long a soft-deleted record stays in `deleted/` before being purged.

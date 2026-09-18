@@ -61,6 +61,15 @@ function assignMoon(planetId) {
   return doc.id;
 }
 
+// Nudges a moon's starCount by delta, floored at 0, so the count tracks the
+// live stars actually on it: a soft-delete frees a slot, a restore reclaims
+// one. Must be called from inside withWriteLock. No-op if the moon is gone.
+function adjustMoonStars(moonId, delta) {
+  const moon = readRecord(MOONS_DIR, moonId);
+  if (!moon) return;
+  writeRecord(MOONS_DIR, moonId, { ...moon, starCount: Math.max(0, moon.starCount + delta) });
+}
+
 // Reads the index rather than every memory file. The index mirrors full
 // records (including photoData/audioData) so the ring view keeps working
 // unchanged. Only non-deleted memories are ever added to the index.
@@ -185,6 +194,7 @@ router.post('/:id/restore', async (req, res) => {
     const restored = await withWriteLock(() => {
       const record = restoreRecord(MEMORIES_DIR, id);
       if (!record) return null;
+      if (record.moonId) adjustMoonStars(record.moonId, 1);
 
       const index = readJSON(INDEX_FILE);
       const idx = index.findIndex((m) => m.id === id);
@@ -213,7 +223,8 @@ router.delete('/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
     await withWriteLock(() => {
-      archiveRecord(MEMORIES_DIR, id);
+      const archived = archiveRecord(MEMORIES_DIR, id);
+      if (archived && archived.moonId) adjustMoonStars(archived.moonId, -1);
       const index = readJSON(INDEX_FILE).filter((m) => m.id !== id);
       writeJSON(INDEX_FILE, index);
     });
